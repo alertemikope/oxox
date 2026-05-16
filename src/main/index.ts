@@ -13,6 +13,7 @@ import { isRendererAttachedToSession } from './ipc/liveSessionAttachmentRegistry
 import { registerAppIpcHandlers } from './ipc/router'
 import { createGracefulQuitController } from './lifecycle/gracefulQuit'
 import { focusMainWindow } from './lifecycle/singleInstance'
+import { createLiveSessionEventBroadcaster } from './liveSessionEventBroadcaster'
 import { createLiveSessionSnapshotBroadcaster } from './liveSessionSnapshotBroadcaster'
 import { installSystemIntegration } from './native/systemIntegration'
 import { getRuntimeInfo } from './runtime/runtimeInfo'
@@ -266,11 +267,16 @@ app.whenReady().then(async () => {
     getSessionSnapshot: (sessionId) => foundationService.getSessionSnapshot(sessionId),
     isRendererAttachedToSession,
   })
+  const liveSessionEventBroadcaster = createLiveSessionEventBroadcaster({
+    getAllWindows: () => BrowserWindow.getAllWindows(),
+    isRendererAttachedToSession,
+  })
   stopRuntimeCoordinator?.()
   const stopCoordinator = startRuntimeCoordinator({
     foundationService,
     pluginHost: appKernel.getPluginHost(),
     broadcastFoundationChanged,
+    broadcastLiveSessionEvent: liveSessionEventBroadcaster.broadcast,
     broadcastLiveSessionSnapshot: liveSessionSnapshotBroadcaster.broadcast,
     broadcastPluginHostSnapshot,
     startPluginBootstrap: () => {
@@ -287,6 +293,7 @@ app.whenReady().then(async () => {
   })
   stopRuntimeCoordinator = () => {
     stopCoordinator()
+    liveSessionEventBroadcaster.dispose()
     liveSessionSnapshotBroadcaster.dispose()
   }
   for (const windowState of windowStateCoordinator.resolveInitialWindows()) {

@@ -417,6 +417,91 @@ describe('LiveSessionStore', () => {
     expect(store.selectedSnapshot?.status).toBe('waiting')
   })
 
+  it('applies live event batches without requiring a full snapshot replacement', () => {
+    const sessionStore = new SessionStore()
+    sessionStore.hydrateSessions([createSessionRecord()])
+    sessionStore.selectSession('session-live-1')
+
+    const store = createStoreHarness(sessionStore)
+    const snapshot = createLiveSnapshot()
+
+    store.upsertSnapshot(snapshot)
+    store.applyEventBatch({
+      sessionId: 'session-live-1',
+      sequenceStart: 1,
+      sequenceEnd: 3,
+      events: [
+        { type: 'message.delta', messageId: 'assistant-1', delta: 'Hel', channel: 'assistant' },
+        { type: 'message.delta', messageId: 'assistant-1', delta: 'lo', channel: 'assistant' },
+        {
+          type: 'message.completed',
+          messageId: 'assistant-1',
+          content: 'Hello',
+          role: 'assistant',
+        },
+      ],
+    })
+
+    expect(store.selectedSnapshot).not.toBe(snapshot)
+    expect(store.selectedSnapshot?.events).toHaveLength(3)
+    expect(store.selectedSnapshot?.messages).toMatchObject([
+      { id: 'assistant-1', content: 'Hello', role: 'assistant' },
+    ])
+    expect(store.selectedTimelineItems).toMatchObject([
+      {
+        kind: 'message',
+        messageId: 'assistant-1',
+        content: 'Hello',
+        status: 'completed',
+      },
+    ])
+  })
+
+  it('keeps stable row objects while appending high-volume streaming batches', () => {
+    const sessionStore = new SessionStore()
+    sessionStore.hydrateSessions([createSessionRecord()])
+    sessionStore.selectSession('session-live-1')
+
+    const store = createStoreHarness(sessionStore)
+    store.upsertSnapshot(
+      createLiveSnapshot({
+        events: [
+          {
+            type: 'message.completed',
+            messageId: 'assistant-0',
+            content: 'Existing response.',
+            role: 'assistant',
+          },
+        ],
+      }),
+    )
+
+    const initialItem = store.selectedTimelineItems[0]
+
+    store.applyEventBatch({
+      sessionId: 'session-live-1',
+      sequenceStart: 1,
+      sequenceEnd: 1000,
+      events: Array.from({ length: 1000 }, (_, index) => ({
+        type: 'message.delta',
+        messageId: 'assistant-1',
+        delta: String(index % 10),
+        channel: 'assistant',
+      })),
+    })
+
+    const nextItems = store.selectedTimelineItems
+
+    expect(nextItems).toHaveLength(2)
+    expect(nextItems[0]).toBe(initialItem)
+    expect(nextItems[1]).toMatchObject({
+      kind: 'message',
+      messageId: 'assistant-1',
+      content: expect.stringMatching(/^0123456789/),
+      status: 'streaming',
+    })
+  })
+
   it('forces a timeline rebuild when transcript revision changes during hydration', () => {
     const sessionStore = new SessionStore()
     sessionStore.hydrateSessions([createSessionRecord()])

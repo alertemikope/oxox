@@ -528,6 +528,35 @@ describe('createOxoxBridge', () => {
     expect(off).toHaveBeenCalledWith(IPC_CHANNELS.sessionSnapshotChanged, handler)
   })
 
+  it('subscribes to live-session event batches through the typed bridge', () => {
+    const invoke = vi.fn()
+    const on = vi.fn()
+    const off = vi.fn()
+    const listener = vi.fn()
+
+    const bridge = createOxoxBridge(invoke, on, off)
+    const unsubscribe = bridge.session.onEventBatch?.(listener)
+    const handler = on.mock.calls[0]?.[1]
+
+    expect(on).toHaveBeenCalledWith(IPC_CHANNELS.sessionEventBatch, expect.any(Function))
+
+    handler?.(undefined, {
+      sessionId: 'session-live-1',
+      sequenceStart: 1,
+      sequenceEnd: 1,
+      events: [{ type: 'message.delta', messageId: 'assistant-1', delta: 'Hello' }],
+    })
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'session-live-1',
+        events: [{ type: 'message.delta', messageId: 'assistant-1', delta: 'Hello' }],
+      }),
+    )
+
+    unsubscribe?.()
+    expect(off).toHaveBeenCalledWith(IPC_CHANNELS.sessionEventBatch, handler)
+  })
+
   it('subscribes to plugin host change events through the typed bridge', () => {
     const invoke = vi.fn()
     const on = vi.fn()

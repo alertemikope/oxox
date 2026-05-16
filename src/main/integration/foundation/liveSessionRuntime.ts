@@ -178,6 +178,9 @@ export interface FoundationLiveSessionRuntime {
   forkSession: (sessionId: string, viewerId?: string) => Promise<LiveSessionSnapshot>
   interruptSession: (sessionId: string) => Promise<void>
   subscribeToSnapshots: (listener: (sessionId: string) => void) => () => void
+  subscribeToEvents: (
+    listener: (payload: { sessionId: string; event: LiveSessionEventRecord }) => void,
+  ) => () => void
   dispose: () => Promise<void>
 }
 
@@ -186,6 +189,9 @@ export function createFoundationLiveSessionRuntime({
   sessionProcessManager,
 }: CreateFoundationLiveSessionRuntimeOptions): FoundationLiveSessionRuntime {
   const snapshotListeners = new Set<(sessionId: string) => void>()
+  const eventListeners = new Set<
+    (payload: { sessionId: string; event: LiveSessionEventRecord }) => void
+  >()
   const sessionEventUnsubscribers = new Map<string, () => void>()
 
   const emitSnapshot = (sessionId: string): void => {
@@ -207,8 +213,16 @@ export function createFoundationLiveSessionRuntime({
       return
     }
 
-    const unsubscribe = sessionProcessManager.subscribe(sessionId, () => {
-      emitSnapshot(sessionId)
+    const unsubscribe = sessionProcessManager.subscribe(sessionId, (event) => {
+      const serializedEvent = serializeLiveSessionEvent(event as SessionEvent)
+
+      for (const listener of eventListeners) {
+        listener({ sessionId, event: serializedEvent })
+      }
+
+      if (shouldEmitSnapshotForEvent(serializedEvent)) {
+        emitSnapshot(sessionId)
+      }
     })
     sessionEventUnsubscribers.set(sessionId, unsubscribe)
   }
@@ -362,13 +376,31 @@ export function createFoundationLiveSessionRuntime({
         snapshotListeners.delete(listener)
       }
     },
+    subscribeToEvents: (listener) => {
+      eventListeners.add(listener)
+
+      return () => {
+        eventListeners.delete(listener)
+      }
+    },
     dispose: async () => {
       for (const unsubscribe of sessionEventUnsubscribers.values()) {
         unsubscribe()
       }
       sessionEventUnsubscribers.clear()
+      eventListeners.clear()
       await sessionProcessManager.dispose()
     },
+  }
+}
+
+function shouldEmitSnapshotForEvent(event: LiveSessionEventRecord): boolean {
+  switch (event.type) {
+    case 'message.delta':
+    case 'tool.progress':
+      return false
+    default:
+      return true
   }
 }
 

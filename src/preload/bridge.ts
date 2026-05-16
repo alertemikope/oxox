@@ -5,6 +5,7 @@ import type {
   FoundationChangedPayload,
   LiveSessionCompactResult,
   LiveSessionContextStatsInfo,
+  LiveSessionEventBatchPayload,
   LiveSessionExecuteRewindResult,
   LiveSessionMcpRegistryServerInfo,
   LiveSessionMcpServerInfo,
@@ -273,6 +274,13 @@ export function createOxoxBridge(
           on,
           off,
           IPC_CHANNELS.sessionSnapshotChanged,
+          listener,
+        ),
+      onEventBatch: (listener) =>
+        subscribeTyped<LiveSessionEventBatchPayload>(
+          on,
+          off,
+          IPC_CHANNELS.sessionEventBatch,
           listener,
         ),
     },

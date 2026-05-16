@@ -57,6 +57,7 @@ export const IPC_CHANNELS = {
   sessionExecuteRewind: 'session:execute-rewind',
   sessionCompact: 'session:compact',
   sessionSnapshotChanged: 'session:snapshot-changed',
+  sessionEventBatch: 'session:event-batch',
   sessionResolvePermissionRequest: 'session:resolve-permission-request',
   sessionResolveAskUserRequest: 'session:resolve-ask-user-request',
 } as const
@@ -406,6 +407,13 @@ export interface PluginCapabilitiesChangedPayload {
 
 export interface LiveSessionSnapshotChangedPayload {
   snapshot: LiveSessionSnapshot
+}
+
+export interface LiveSessionEventBatchPayload {
+  sessionId: string
+  sequenceStart: number
+  sequenceEnd: number
+  events: LiveSessionEventRecord[]
 }
 
 export interface LiveSessionTokenUsageRecord {
@@ -838,6 +846,9 @@ export interface OxoxBridge {
     ) => Promise<void>
     onSnapshotChanged?: (
       listener: (payload: LiveSessionSnapshotChangedPayload) => void,
+    ) => (() => void) | undefined
+    onEventBatch?: (
+      listener: (payload: LiveSessionEventBatchPayload) => void,
     ) => (() => void) | undefined
   }
 }

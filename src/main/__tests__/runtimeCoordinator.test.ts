@@ -6,6 +6,12 @@ describe('startRuntimeCoordinator', () => {
   it('subscribes to runtime sources, broadcasts payloads, and cleans up subscriptions', () => {
     let foundationListener: ((payload: { refreshedAt: string }) => void) | undefined
     let liveSnapshotListener: ((sessionId: string) => void) | undefined
+    let liveEventListener:
+      | ((payload: {
+          sessionId: string
+          event: { type: 'message.delta'; messageId: string; delta: string }
+        }) => void)
+      | undefined
     let pluginHostListener:
       | ((snapshot: {
           pluginId: string
@@ -16,6 +22,7 @@ describe('startRuntimeCoordinator', () => {
       | undefined
     const unsubscribeFoundation = vi.fn()
     const unsubscribeSnapshots = vi.fn()
+    const unsubscribeEvents = vi.fn()
     const unsubscribePluginHost = vi.fn()
     const foundationService = {
       subscribeToFoundationUpdates: vi.fn(
@@ -28,6 +35,17 @@ describe('startRuntimeCoordinator', () => {
         liveSnapshotListener = listener
         return unsubscribeSnapshots
       }),
+      subscribeToLiveSessionEvents: vi.fn(
+        (
+          listener: (payload: {
+            sessionId: string
+            event: { type: 'message.delta'; messageId: string; delta: string }
+          }) => void,
+        ) => {
+          liveEventListener = listener
+          return unsubscribeEvents
+        },
+      ),
     }
     const pluginHost = {
       subscribe: vi.fn(
@@ -46,6 +64,7 @@ describe('startRuntimeCoordinator', () => {
     }
     const broadcastFoundationChanged = vi.fn()
     const broadcastLiveSessionSnapshot = vi.fn()
+    const broadcastLiveSessionEvent = vi.fn()
     const broadcastPluginHostSnapshot = vi.fn()
     const startPluginBootstrap = vi.fn()
 
@@ -53,6 +72,7 @@ describe('startRuntimeCoordinator', () => {
       foundationService,
       pluginHost,
       broadcastFoundationChanged,
+      broadcastLiveSessionEvent,
       broadcastLiveSessionSnapshot,
       broadcastPluginHostSnapshot,
       startPluginBootstrap,
@@ -60,6 +80,10 @@ describe('startRuntimeCoordinator', () => {
 
     foundationListener?.({ refreshedAt: '2026-04-02T00:00:00.000Z' })
     liveSnapshotListener?.('session-1')
+    liveEventListener?.({
+      sessionId: 'session-1',
+      event: { type: 'message.delta', messageId: 'assistant-1', delta: 'Hello' },
+    })
     pluginHostListener?.({
       pluginId: 'plugin.example',
       processId: 4242,
@@ -72,6 +96,10 @@ describe('startRuntimeCoordinator', () => {
     })
     expect(broadcastLiveSessionSnapshot).toHaveBeenCalledWith({
       sessionId: 'session-1',
+    })
+    expect(broadcastLiveSessionEvent).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      event: { type: 'message.delta', messageId: 'assistant-1', delta: 'Hello' },
     })
     expect(broadcastPluginHostSnapshot).toHaveBeenCalledWith({
       snapshot: {
@@ -87,6 +115,7 @@ describe('startRuntimeCoordinator', () => {
 
     expect(unsubscribeFoundation).toHaveBeenCalledTimes(1)
     expect(unsubscribeSnapshots).toHaveBeenCalledTimes(1)
+    expect(unsubscribeEvents).toHaveBeenCalledTimes(1)
     expect(unsubscribePluginHost).toHaveBeenCalledTimes(1)
   })
 })

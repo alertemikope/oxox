@@ -1,5 +1,11 @@
-import type { LiveSessionSnapshot } from '../../../shared/ipc/contracts'
+import type {
+  LiveSessionEventBatchPayload,
+  LiveSessionEventRecord,
+  LiveSessionMessage,
+  LiveSessionSnapshot,
+} from '../../../shared/ipc/contracts'
 import {
+  appendLiveTimelineEvents,
   createLiveTimelineAccumulator,
   type LiveTimelineAccumulator,
   syncLiveTimelineAccumulator,
@@ -97,6 +103,29 @@ export class LiveSessionStore {
     })
   }
 
+  applyEventBatch(payload: LiveSessionEventBatchPayload): void {
+    if (payload.events.length === 0) {
+      return
+    }
+
+    const previousSnapshot = readMapValue(this.stateNode.snapshotsById, payload.sessionId)
+
+    if (!previousSnapshot) {
+      return
+    }
+
+    const nextSnapshot = applyEventsToSnapshot(previousSnapshot, payload.events)
+
+    batch(() => {
+      writeMapValue(this.stateNode.snapshotsById, payload.sessionId, nextSnapshot)
+      this.appendTimelineEvents(previousSnapshot, nextSnapshot, payload.events)
+    })
+
+    this.bus.emit('session-upsert', {
+      record: toSessionRecord(nextSnapshot, this.getSessionPreview(nextSnapshot.sessionId)),
+    })
+  }
+
   clearSnapshot(sessionId: string): void {
     batch(() => {
       this.stateNode.snapshotsById.delete(sessionId)
@@ -138,6 +167,109 @@ export class LiveSessionStore {
 
     writeMapValue(this.stateNode.timelineItemsById, snapshot.sessionId, [...items])
   }
+
+  private appendTimelineEvents(
+    previousSnapshot: LiveSessionSnapshot,
+    snapshot: LiveSessionSnapshot,
+    events: LiveSessionEventRecord[],
+  ): void {
+    const existingAccumulator = this.timelineAccumulatorsById.get(snapshot.sessionId)
+    const accumulator = existingAccumulator ?? createLiveTimelineAccumulator(previousSnapshot)
+    const { didChange, items } = appendLiveTimelineEvents(accumulator, snapshot, events)
+
+    this.timelineAccumulatorsById.set(snapshot.sessionId, accumulator)
+
+    if (!didChange) {
+      return
+    }
+
+    writeMapValue(this.stateNode.timelineItemsById, snapshot.sessionId, [...items])
+  }
+}
+
+function applyEventsToSnapshot(
+  previousSnapshot: LiveSessionSnapshot,
+  events: LiveSessionEventRecord[],
+): LiveSessionSnapshot {
+  let nextSnapshot: LiveSessionSnapshot = {
+    ...previousSnapshot,
+    events: [...previousSnapshot.events, ...events],
+  }
+
+  for (const event of events) {
+    nextSnapshot = applyEventToSnapshot(nextSnapshot, event)
+  }
+
+  return nextSnapshot
+}
+
+function applyEventToSnapshot(
+  snapshot: LiveSessionSnapshot,
+  event: LiveSessionEventRecord,
+): LiveSessionSnapshot {
+  switch (event.type) {
+    case 'message.completed':
+      return {
+        ...snapshot,
+        messages: upsertMessage(snapshot.messages, {
+          id: event.messageId,
+          role: event.role,
+          content: event.content,
+          rewindBoundaryMessageId: event.rewindBoundaryMessageId,
+          contentBlocks: event.contentBlocks,
+        }),
+      }
+    case 'session.statusChanged':
+      return {
+        ...snapshot,
+        status: event.status,
+      }
+    case 'session.titleChanged':
+      return {
+        ...snapshot,
+        title: event.title,
+      }
+    case 'session.settingsChanged':
+      return {
+        ...snapshot,
+        settings: {
+          ...snapshot.settings,
+          ...event.settings,
+        },
+      }
+    case 'stream.completed':
+      return {
+        ...snapshot,
+        status: event.reason === 'turn_complete' ? 'idle' : 'completed',
+        processId: event.reason === 'turn_complete' ? snapshot.processId : null,
+      }
+    case 'stream.error':
+      return {
+        ...snapshot,
+        status: event.recoverable ? 'reconnecting' : 'error',
+        processId: null,
+      }
+    case 'session.result':
+      return {
+        ...snapshot,
+        status: event.success ? 'idle' : 'error',
+      }
+    default:
+      return snapshot
+  }
+}
+
+function upsertMessage(
+  messages: LiveSessionMessage[],
+  nextMessage: LiveSessionMessage,
+): LiveSessionMessage[] {
+  const existingIndex = messages.findIndex((message) => message.id === nextMessage.id)
+
+  if (existingIndex < 0) {
+    return [...messages, nextMessage]
+  }
+
+  return messages.map((message, index) => (index === existingIndex ? nextMessage : message))
 }
 
 function snapshotChanged(

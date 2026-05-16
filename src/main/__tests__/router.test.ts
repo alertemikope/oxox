@@ -126,6 +126,7 @@ describe('registerAppIpcHandlers', () => {
         channel !== 'appUpdateStateChanged' &&
         channel !== 'pluginCapabilitiesChanged' &&
         channel !== 'foundationChanged' &&
+        channel !== 'sessionEventBatch' &&
         channel !== 'sessionSnapshotChanged' &&
         channel !== 'pluginHostChanged',
     ).length

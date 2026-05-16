@@ -11,6 +11,7 @@ import type {
   LiveSessionBugReportResult,
   LiveSessionCompactResult,
   LiveSessionContextStatsInfo,
+  LiveSessionEventRecord,
   LiveSessionExecuteRewindParams,
   LiveSessionExecuteRewindResult,
   LiveSessionMcpAuthCodeRequest,
@@ -134,6 +135,9 @@ export interface FoundationService {
   ) => (() => void) | undefined
   subscribeToLiveSessionSnapshots: (
     listener: (sessionId: string) => void,
+  ) => (() => void) | undefined
+  subscribeToLiveSessionEvents: (
+    listener: (payload: { sessionId: string; event: LiveSessionEventRecord }) => void,
   ) => (() => void) | undefined
 }
 
@@ -298,6 +302,7 @@ export function createFoundationService(options: CreateDatabaseServiceOptions): 
       }
     },
     subscribeToLiveSessionSnapshots: liveSessionRuntime.subscribeToSnapshots,
+    subscribeToLiveSessionEvents: liveSessionRuntime.subscribeToEvents,
   }
 }
 

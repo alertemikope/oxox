@@ -3,7 +3,10 @@
 import { act, render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { LiveSessionSnapshot } from '../../../../../shared/ipc/contracts'
+import type {
+  LiveSessionEventBatchPayload,
+  LiveSessionSnapshot,
+} from '../../../../../shared/ipc/contracts'
 
 import { useLiveSessionPoll } from '../useLiveSessionPoll'
 
@@ -35,10 +38,14 @@ function LiveSessionPollProbe({
     selectedSnapshotId: string | null
     refreshSnapshot: (sessionId: string) => Promise<void>
     upsertSnapshot: (snapshot: LiveSessionSnapshot) => void
+    applyEventBatch?: (payload: LiveSessionEventBatchPayload) => void
   }
   sessionApi: {
     onSnapshotChanged?: (
       listener: (payload: { snapshot: LiveSessionSnapshot }) => void,
+    ) => (() => void) | undefined
+    onEventBatch?: (
+      listener: (payload: LiveSessionEventBatchPayload) => void,
     ) => (() => void) | undefined
   }
 }) {
@@ -152,5 +159,73 @@ describe('useLiveSessionPoll', () => {
     expect(liveSessionStore.upsertSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'final streaming chunk' }),
     )
+  })
+
+  it('coalesces matching event batches without dropping streamed deltas', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn((callback: FrameRequestCallback) => window.setTimeout(() => callback(16), 16)),
+    )
+    vi.stubGlobal(
+      'cancelAnimationFrame',
+      vi.fn((handle: number) => window.clearTimeout(handle)),
+    )
+
+    const liveSessionStore = {
+      selectedSnapshotId: 'session-live-1',
+      refreshSnapshot: vi.fn().mockResolvedValue(undefined),
+      upsertSnapshot: vi.fn(),
+      applyEventBatch: vi.fn(),
+    }
+    let eventBatchListener: ((payload: LiveSessionEventBatchPayload) => void) | undefined
+    const sessionApi = {
+      onSnapshotChanged: vi.fn(),
+      onEventBatch: vi.fn((listener) => {
+        eventBatchListener = listener
+        return undefined
+      }),
+    }
+
+    render(<LiveSessionPollProbe liveSessionStore={liveSessionStore} sessionApi={sessionApi} />)
+
+    await act(async () => {
+      eventBatchListener?.({
+        sessionId: 'session-live-1',
+        sequenceStart: 1,
+        sequenceEnd: 1,
+        events: [{ type: 'message.delta', messageId: 'assistant-1', delta: 'Hel' }],
+      })
+      eventBatchListener?.({
+        sessionId: 'session-live-2',
+        sequenceStart: 1,
+        sequenceEnd: 1,
+        events: [{ type: 'message.delta', messageId: 'assistant-2', delta: 'ignored' }],
+      })
+      eventBatchListener?.({
+        sessionId: 'session-live-1',
+        sequenceStart: 2,
+        sequenceEnd: 2,
+        events: [{ type: 'message.delta', messageId: 'assistant-1', delta: 'lo' }],
+      })
+      await Promise.resolve()
+    })
+
+    expect(liveSessionStore.applyEventBatch).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(16)
+    })
+
+    expect(liveSessionStore.applyEventBatch).toHaveBeenCalledTimes(1)
+    expect(liveSessionStore.applyEventBatch).toHaveBeenCalledWith({
+      sessionId: 'session-live-1',
+      sequenceStart: 1,
+      sequenceEnd: 2,
+      events: [
+        { type: 'message.delta', messageId: 'assistant-1', delta: 'Hel' },
+        { type: 'message.delta', messageId: 'assistant-1', delta: 'lo' },
+      ],
+    })
   })
 })

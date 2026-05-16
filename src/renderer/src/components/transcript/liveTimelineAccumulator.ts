@@ -106,6 +106,32 @@ export function syncLiveTimelineAccumulator(
   }
 }
 
+export function appendLiveTimelineEvents(
+  accumulator: LiveTimelineAccumulator,
+  snapshot: LiveSessionSnapshot,
+  events: LiveSessionEventRecord[],
+): LiveTimelineSyncResult {
+  if (events.length === 0) {
+    accumulator.snapshot = snapshot
+    return {
+      didChange: false,
+      items: accumulator.timelineItems,
+    }
+  }
+
+  indexEventBackedMessageIds(accumulator.eventBackedMessageIds, events)
+
+  for (const event of events) {
+    applyEvent(accumulator, event)
+  }
+
+  accumulator.snapshot = snapshot
+  return {
+    didChange: true,
+    items: accumulator.timelineItems,
+  }
+}
+
 function createEmptyAccumulator(): LiveTimelineAccumulator {
   return {
     snapshot: null,
