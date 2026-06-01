@@ -3,11 +3,17 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../stores/StoreProvider', () => ({
-  useUIStore: () => ({
-    isSidebarHidden: false,
-  }),
-}))
+vi.mock('../../../stores/StoreProvider', async () => {
+  const { createMemoryPersistencePort } = await vi.importActual<
+    typeof import('../../../platform/persistence')
+  >('../../../platform/persistence')
+  const { UIStore } =
+    await vi.importActual<typeof import('../../../stores/UIStore')>('../../../stores/UIStore')
+
+  return {
+    useUIStore: () => new UIStore(createMemoryPersistencePort()),
+  }
+})
 
 vi.mock('../AppShellTopBarConnected', () => ({
   AppShellTopBarConnected: () => <div data-testid="top-bar">top-bar</div>,

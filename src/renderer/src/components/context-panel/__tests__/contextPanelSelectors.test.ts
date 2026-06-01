@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { createMemoryPersistencePort } from '../../../platform/persistence'
+import { UIStore } from '../../../stores/UIStore'
 import { buildContextPanelProps } from '../contextPanelSelectors'
 
 describe('buildContextPanelProps', () => {
@@ -27,9 +29,7 @@ describe('buildContextPanelProps', () => {
       sessionStore: {
         selectedSession: { id: 'session-1' },
       } as never,
-      uiStore: {
-        contextPanelWidth: 360,
-      } as never,
+      uiStore: createUIStore({ contextPanelWidth: 360 }),
     })
 
     expect(props.isLoading).toBe(false)
@@ -45,3 +45,9 @@ describe('buildContextPanelProps', () => {
     expect(refresh).toHaveBeenCalledTimes(1)
   })
 })
+
+function createUIStore({ contextPanelWidth }: { contextPanelWidth: number }): UIStore {
+  const uiStore = new UIStore(createMemoryPersistencePort())
+  uiStore.state$.contextPanelWidth.set(contextPanelWidth)
+  return uiStore
+}

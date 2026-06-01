@@ -1,4 +1,4 @@
-import { useValue } from '../../stores/legend'
+import { useValue } from '@legendapp/state/react'
 import { useUIStore } from '../../stores/StoreProvider'
 import { AppShellMainContent } from './AppShellMainContent'
 import { AppShellSidebarRegion } from './AppShellSidebarRegion'
@@ -12,7 +12,7 @@ interface AppShellViewProps {
 
 export function AppShellView({ prefersReducedMotion }: AppShellViewProps) {
   const uiStore = useUIStore()
-  const isSidebarHidden = useValue(() => uiStore.isSidebarHidden)
+  const isSidebarHidden = useValue(uiStore.state$.isSidebarHidden)
 
   return (
     <div

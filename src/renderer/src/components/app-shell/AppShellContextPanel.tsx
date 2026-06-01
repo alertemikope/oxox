@@ -1,8 +1,8 @@
+import { useValue } from '@legendapp/state/react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMemo } from 'react'
 
 import { createPanelVariants } from '../../lib/motion'
-import { useValue } from '../../stores/legend'
 import { useUIStore } from '../../stores/StoreProvider'
 import { ContextPanelConnected } from '../context-panel/ContextPanelConnected'
 import { useAppShellControllerContext } from './AppShellControllerContext'
@@ -20,7 +20,7 @@ export function AppShellContextPanel({
   const uiStore = useUIStore()
   const { contextPanelRef, handleBrowseSessions, startContextPanelResize } =
     useAppShellControllerContext()
-  const isContextPanelHidden = useValue(() => uiStore.isContextPanelHidden)
+  const isContextPanelHidden = useValue(uiStore.state$.isContextPanelHidden)
   const contextPanelState = useMemo(
     () =>
       buildAppShellContextPanelState({

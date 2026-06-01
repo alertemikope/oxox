@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { createMemoryPersistencePort } from '../../../platform/persistence'
+import { UIStore } from '../../../stores/UIStore'
 import {
   buildAppShellContextPanelState,
   buildAppShellSidebarProps,
@@ -73,10 +75,10 @@ describe('app-shell connected selectors', () => {
       transportStore: {
         protocol: 'artifacts',
       } as never,
-      uiStore: {
+      uiStore: createUIStore({
         isSidebarHidden: false,
         sidebarWidth: 320,
-      } as never,
+      }),
     })
 
     expect(props.showNewSessionForm).toBe(true)
@@ -126,8 +128,10 @@ describe('app-shell connected selectors', () => {
       } as never,
       shouldAnimate: true,
       uiStore: {
+        ...createUIStore({
+          isSidebarHidden: true,
+        }),
         isProjectCollapsed,
-        isSidebarHidden: true,
         toggleProjectCollapsed: vi.fn(),
       } as never,
     })
@@ -211,3 +215,16 @@ describe('app-shell connected selectors', () => {
     ).toBeNull()
   })
 })
+
+function createUIStore({
+  isSidebarHidden = false,
+  sidebarWidth = 256,
+}: {
+  isSidebarHidden?: boolean
+  sidebarWidth?: number
+}): UIStore {
+  const uiStore = new UIStore(createMemoryPersistencePort())
+  uiStore.state$.isSidebarHidden.set(isSidebarHidden)
+  uiStore.state$.sidebarWidth.set(sidebarWidth)
+  return uiStore
+}

@@ -1,6 +1,6 @@
+import { useValue } from '@legendapp/state/react'
 import { useRef } from 'react'
 import { useMountEffect } from '../../hooks/useMountEffect'
-import { useValue } from '../../stores/legend'
 import { SessionSearchController } from '../../stores/SessionSearchController'
 import { useRootStore, useSessionStore, useUIStore } from '../../stores/StoreProvider'
 import type { CommandPaletteAction } from '../command-palette/CommandPalette'
@@ -24,7 +24,7 @@ export function CommandPaletteConnected({ commandPalette }: CommandPaletteConnec
   const searchController = searchControllerRef.current
   const controller = useOptionalAppShellControllerContext()
   const resolvedCommandPalette = commandPalette ?? controller?.commandPalette
-  const open = useValue(() => uiStore.isCommandPaletteOpen)
+  const open = useValue(uiStore.state$.isCommandPaletteOpen)
   const sessions = useValue(() => {
     if (!open) {
       return []

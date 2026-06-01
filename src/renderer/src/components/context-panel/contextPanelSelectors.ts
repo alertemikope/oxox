@@ -1,5 +1,6 @@
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
 
+import type { UIStore } from '../../stores/UIStore'
 import type { ContextPanelProps } from './ContextPanel'
 
 export function buildContextPanelProps({
@@ -27,9 +28,7 @@ export function buildContextPanelProps({
   sessionStore: {
     selectedSession: ContextPanelProps['selectedSession']
   }
-  uiStore: {
-    contextPanelWidth: number
-  }
+  uiStore: UIStore
 }): ContextPanelProps {
   return {
     errorState: foundationStore.hasError
@@ -47,6 +46,6 @@ export function buildContextPanelProps({
     panelRef,
     runtimeCatalog: sessionRuntimeCatalogStore,
     selectedSession: sessionStore.selectedSession,
-    width: uiStore.contextPanelWidth,
+    width: uiStore.state$.contextPanelWidth.get(),
   }
 }

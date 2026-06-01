@@ -1,7 +1,7 @@
+import { useValue } from '@legendapp/state/react'
 import { AnimatePresence, motion } from 'framer-motion'
 
 import { createLayoutTransition, createViewPresenceVariants } from '../../lib/motion'
-import { useValue } from '../../stores/legend'
 import {
   useFoundationStore,
   useLiveSessionStore,
@@ -37,10 +37,10 @@ export function AppShellMainContent({ prefersReducedMotion }: AppShellMainConten
       prefersReducedMotion,
       sessionStore,
     })
-  const isSettingsOpen = useValue(() => uiStore.isSettingsOpen)
-  const settingsSection = useValue(() => uiStore.settingsSection)
-  const isContextPanelHidden = useValue(() => uiStore.isContextPanelHidden)
-  const contentLayout = useValue(() => uiStore.contentLayout)
+  const isSettingsOpen = useValue(() => uiStore.isSettingsOpen())
+  const settingsSection = useValue(uiStore.state$.settingsSection)
+  const isContextPanelHidden = useValue(uiStore.state$.isContextPanelHidden)
+  const contentLayout = useValue(uiStore.state$.contentLayout)
 
   if (isSettingsOpen) {
     return (

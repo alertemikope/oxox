@@ -1,5 +1,5 @@
+import { batch, type Observable, observable } from '@legendapp/state'
 import { createLocalStoragePort, type PersistencePort } from '../platform/persistence'
-import { bindMethods, observable, readField, writeField } from './legend'
 
 const SIDEBAR_STATE_STORAGE_KEY = 'oxox.ui.sidebar'
 const DEFAULT_SIDEBAR_WIDTH = 256
@@ -22,10 +22,23 @@ export type SettingsSection = 'general' | 'archive'
 export type ContentLayout = 'fluid' | 'fixed'
 export type ComposerContextUsageDisplayMode = 'percentage' | 'tokens'
 
-export class UIStore {
-  readonly colorMode = 'dark'
-  readonly isCommandPaletteReady = true
-  readonly stateNode = observable({
+export interface UIState {
+  sidebarWidth: number
+  isSidebarHidden: boolean
+  isResizingSidebar: boolean
+  contextPanelWidth: number
+  isContextPanelHidden: boolean
+  isResizingContextPanel: boolean
+  isCommandPaletteOpen: boolean
+  collapsedProjectKeys: string[]
+  contentLayout: ContentLayout
+  composerContextUsageDisplayMode: ComposerContextUsageDisplayMode
+  activeView: AppView
+  settingsSection: SettingsSection
+}
+
+function createDefaultUIState(): UIState {
+  return {
     sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     isSidebarHidden: false,
     isResizingSidebar: false,
@@ -33,264 +46,184 @@ export class UIStore {
     isContextPanelHidden: false,
     isResizingContextPanel: false,
     isCommandPaletteOpen: false,
-    collapsedProjectKeys: [] as string[],
-    contentLayout: 'fixed' as ContentLayout,
-    composerContextUsageDisplayMode: 'percentage' as ComposerContextUsageDisplayMode,
-    activeView: 'sessions' as AppView,
-    settingsSection: 'general' as SettingsSection,
-  })
+    collapsedProjectKeys: [],
+    contentLayout: 'fixed',
+    composerContextUsageDisplayMode: 'percentage',
+    activeView: 'sessions',
+    settingsSection: 'general',
+  }
+}
+
+export class UIStore {
+  readonly colorMode = 'dark'
+  readonly isCommandPaletteReady = true
+  readonly state$: Observable<UIState> = observable(createDefaultUIState())
   private readonly persistence: PersistencePort
 
   constructor(persistence: PersistencePort = createLocalStoragePort()) {
     this.persistence = persistence
-    bindMethods(this)
     this.hydrate()
   }
 
-  get sidebarWidth(): number {
-    return readField(this.stateNode, 'sidebarWidth')
-  }
-
-  set sidebarWidth(value: number) {
-    writeField(this.stateNode, 'sidebarWidth', value)
-  }
-
-  get isSidebarHidden(): boolean {
-    return readField(this.stateNode, 'isSidebarHidden')
-  }
-
-  set isSidebarHidden(value: boolean) {
-    writeField(this.stateNode, 'isSidebarHidden', value)
-  }
-
-  get isResizingSidebar(): boolean {
-    return readField(this.stateNode, 'isResizingSidebar')
-  }
-
-  set isResizingSidebar(value: boolean) {
-    writeField(this.stateNode, 'isResizingSidebar', value)
-  }
-
-  get contextPanelWidth(): number {
-    return readField(this.stateNode, 'contextPanelWidth')
-  }
-
-  set contextPanelWidth(value: number) {
-    writeField(this.stateNode, 'contextPanelWidth', value)
-  }
-
-  get isContextPanelHidden(): boolean {
-    return readField(this.stateNode, 'isContextPanelHidden')
-  }
-
-  set isContextPanelHidden(value: boolean) {
-    writeField(this.stateNode, 'isContextPanelHidden', value)
-  }
-
-  get isResizingContextPanel(): boolean {
-    return readField(this.stateNode, 'isResizingContextPanel')
-  }
-
-  set isResizingContextPanel(value: boolean) {
-    writeField(this.stateNode, 'isResizingContextPanel', value)
-  }
-
-  get isCommandPaletteOpen(): boolean {
-    return readField(this.stateNode, 'isCommandPaletteOpen')
-  }
-
-  set isCommandPaletteOpen(value: boolean) {
-    writeField(this.stateNode, 'isCommandPaletteOpen', value)
-  }
-
-  get collapsedProjectKeys(): string[] {
-    return readField(this.stateNode, 'collapsedProjectKeys')
-  }
-
-  set collapsedProjectKeys(value: string[]) {
-    writeField(this.stateNode, 'collapsedProjectKeys', value)
-  }
-
-  get contentLayout(): ContentLayout {
-    return readField(this.stateNode, 'contentLayout')
-  }
-
-  set contentLayout(value: ContentLayout) {
-    writeField(this.stateNode, 'contentLayout', value)
-  }
-
-  get composerContextUsageDisplayMode(): ComposerContextUsageDisplayMode {
-    return readField(this.stateNode, 'composerContextUsageDisplayMode')
-  }
-
-  set composerContextUsageDisplayMode(value: ComposerContextUsageDisplayMode) {
-    writeField(this.stateNode, 'composerContextUsageDisplayMode', value)
-  }
-
-  get activeView(): AppView {
-    return readField(this.stateNode, 'activeView')
-  }
-
-  set activeView(value: AppView) {
-    writeField(this.stateNode, 'activeView', value)
-  }
-
-  get settingsSection(): SettingsSection {
-    return readField(this.stateNode, 'settingsSection')
-  }
-
-  set settingsSection(value: SettingsSection) {
-    writeField(this.stateNode, 'settingsSection', value)
-  }
-
-  setSidebarWidth(width: number, windowWidth = getWindowWidth()): void {
-    this.sidebarWidth = clampSidebarWidth(width, windowWidth)
+  setSidebarWidth = (width: number, windowWidth = getWindowWidth()): void => {
+    this.state$.sidebarWidth.set(clampSidebarWidth(width, windowWidth))
     this.persist()
   }
 
-  syncSidebarWidth(windowWidth = getWindowWidth()): void {
-    const clampedWidth = clampSidebarWidth(this.sidebarWidth, windowWidth)
+  syncSidebarWidth = (windowWidth = getWindowWidth()): void => {
+    const clampedWidth = clampSidebarWidth(this.state$.sidebarWidth.get(), windowWidth)
 
-    if (clampedWidth === this.sidebarWidth) {
+    if (clampedWidth === this.state$.sidebarWidth.get()) {
       return
     }
 
-    this.sidebarWidth = clampedWidth
+    this.state$.sidebarWidth.set(clampedWidth)
     this.persist()
   }
 
-  setContextPanelWidth(width: number, windowWidth = getWindowWidth()): void {
-    this.contextPanelWidth = clampContextPanelWidth(width, windowWidth)
+  setContextPanelWidth = (width: number, windowWidth = getWindowWidth()): void => {
+    this.state$.contextPanelWidth.set(clampContextPanelWidth(width, windowWidth))
     this.persist()
   }
 
-  syncContextPanelWidth(windowWidth = getWindowWidth()): void {
-    const clampedWidth = clampContextPanelWidth(this.contextPanelWidth, windowWidth)
+  syncContextPanelWidth = (windowWidth = getWindowWidth()): void => {
+    const clampedWidth = clampContextPanelWidth(this.state$.contextPanelWidth.get(), windowWidth)
 
-    if (clampedWidth === this.contextPanelWidth) {
+    if (clampedWidth === this.state$.contextPanelWidth.get()) {
       return
     }
 
-    this.contextPanelWidth = clampedWidth
+    this.state$.contextPanelWidth.set(clampedWidth)
     this.persist()
   }
 
-  toggleSidebar(): void {
-    this.isSidebarHidden = !this.isSidebarHidden
+  toggleSidebar = (): void => {
+    this.state$.isSidebarHidden.set((isHidden) => !isHidden)
     this.persist()
   }
 
-  showSidebar(): void {
-    if (!this.isSidebarHidden) {
+  showSidebar = (): void => {
+    if (!this.state$.isSidebarHidden.get()) {
       return
     }
 
-    this.isSidebarHidden = false
+    this.state$.isSidebarHidden.set(false)
     this.persist()
   }
 
-  setIsResizingSidebar(value: boolean): void {
-    this.isResizingSidebar = value
+  setIsResizingSidebar = (value: boolean): void => {
+    this.state$.isResizingSidebar.set(value)
   }
 
-  toggleContextPanel(): void {
-    this.isContextPanelHidden = !this.isContextPanelHidden
+  toggleContextPanel = (): void => {
+    this.state$.isContextPanelHidden.set((isHidden) => !isHidden)
     this.persist()
   }
 
-  showContextPanel(): void {
-    if (!this.isContextPanelHidden) {
+  showContextPanel = (): void => {
+    if (!this.state$.isContextPanelHidden.get()) {
       return
     }
 
-    this.isContextPanelHidden = false
+    this.state$.isContextPanelHidden.set(false)
     this.persist()
   }
 
-  setIsResizingContextPanel(value: boolean): void {
-    this.isResizingContextPanel = value
+  setIsResizingContextPanel = (value: boolean): void => {
+    this.state$.isResizingContextPanel.set(value)
   }
 
-  openCommandPalette(): void {
-    this.isCommandPaletteOpen = true
+  openCommandPalette = (): void => {
+    this.state$.isCommandPaletteOpen.set(true)
   }
 
-  closeCommandPalette(): void {
-    this.isCommandPaletteOpen = false
+  closeCommandPalette = (): void => {
+    this.state$.isCommandPaletteOpen.set(false)
   }
 
-  openSettings(section?: SettingsSection): void {
-    this.activeView = 'settings'
-    if (section) this.settingsSection = section
+  openSettings = (section?: SettingsSection): void => {
+    batch(() => {
+      this.state$.activeView.set('settings')
+      if (section) this.state$.settingsSection.set(section)
+    })
   }
 
-  closeSettings(): void {
-    this.activeView = 'sessions'
-    this.settingsSection = 'general'
+  closeSettings = (): void => {
+    this.state$.assign({
+      activeView: 'sessions',
+      settingsSection: 'general',
+    })
   }
 
-  setSettingsSection(section: SettingsSection): void {
-    this.settingsSection = section
+  setSettingsSection = (section: SettingsSection): void => {
+    this.state$.settingsSection.set(section)
   }
 
-  get isSettingsOpen(): boolean {
-    return this.activeView === 'settings'
+  isSettingsOpen = (): boolean => {
+    return this.state$.activeView.get() === 'settings'
   }
 
-  toggleContentLayout(): void {
-    this.contentLayout = this.contentLayout === 'fluid' ? 'fixed' : 'fluid'
+  toggleContentLayout = (): void => {
+    this.state$.contentLayout.set((layout) => (layout === 'fluid' ? 'fixed' : 'fluid'))
     this.persist()
   }
 
-  setContentLayout(layout: ContentLayout): void {
-    this.contentLayout = layout
+  setContentLayout = (layout: ContentLayout): void => {
+    this.state$.contentLayout.set(layout)
     this.persist()
   }
 
-  setComposerContextUsageDisplayMode(mode: ComposerContextUsageDisplayMode): void {
-    this.composerContextUsageDisplayMode = mode
+  setComposerContextUsageDisplayMode = (mode: ComposerContextUsageDisplayMode): void => {
+    this.state$.composerContextUsageDisplayMode.set(mode)
     this.persist()
   }
 
-  isProjectCollapsed(projectKey: string): boolean {
-    return this.collapsedProjectKeys.includes(projectKey)
+  isProjectCollapsed = (projectKey: string): boolean => {
+    return this.state$.collapsedProjectKeys.get().includes(projectKey)
   }
 
-  toggleProjectCollapsed(projectKey: string): void {
-    if (this.isProjectCollapsed(projectKey)) {
-      this.collapsedProjectKeys = this.collapsedProjectKeys.filter((key) => key !== projectKey)
+  toggleProjectCollapsed = (projectKey: string): void => {
+    const index = this.state$.collapsedProjectKeys.get().indexOf(projectKey)
+
+    if (index >= 0) {
+      this.state$.collapsedProjectKeys[index].delete()
       this.persist()
       return
     }
 
-    this.collapsedProjectKeys = [...this.collapsedProjectKeys, projectKey]
+    this.state$.collapsedProjectKeys.push(projectKey)
     this.persist()
   }
 
   private hydrate(): void {
     const nextState = readPersistedSidebarState(this.persistence)
 
-    this.sidebarWidth = clampSidebarWidth(nextState.sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH)
-    this.isSidebarHidden = nextState.isSidebarHidden ?? false
-    this.contextPanelWidth = clampContextPanelWidth(
-      nextState.contextPanelWidth ?? DEFAULT_CONTEXT_PANEL_WIDTH,
-    )
-    this.isContextPanelHidden = nextState.isContextPanelHidden ?? false
-    this.collapsedProjectKeys = nextState.collapsedProjectKeys ?? []
-    this.contentLayout = nextState.contentLayout === 'fluid' ? 'fluid' : 'fixed'
-    this.composerContextUsageDisplayMode =
-      nextState.composerContextUsageDisplayMode === 'tokens' ? 'tokens' : 'percentage'
+    batch(() => {
+      this.state$.assign({
+        sidebarWidth: clampSidebarWidth(nextState.sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH),
+        isSidebarHidden: nextState.isSidebarHidden ?? false,
+        contextPanelWidth: clampContextPanelWidth(
+          nextState.contextPanelWidth ?? DEFAULT_CONTEXT_PANEL_WIDTH,
+        ),
+        isContextPanelHidden: nextState.isContextPanelHidden ?? false,
+        collapsedProjectKeys: nextState.collapsedProjectKeys ?? [],
+        contentLayout: nextState.contentLayout === 'fluid' ? 'fluid' : 'fixed',
+        composerContextUsageDisplayMode:
+          nextState.composerContextUsageDisplayMode === 'tokens' ? 'tokens' : 'percentage',
+      })
+    })
   }
 
   private persist(): void {
+    const current = this.state$.peek()
     const state: PersistedSidebarState = {
-      sidebarWidth: this.sidebarWidth,
-      isSidebarHidden: this.isSidebarHidden,
-      contextPanelWidth: this.contextPanelWidth,
-      isContextPanelHidden: this.isContextPanelHidden,
-      collapsedProjectKeys: this.collapsedProjectKeys,
-      contentLayout: this.contentLayout,
-      composerContextUsageDisplayMode: this.composerContextUsageDisplayMode,
+      sidebarWidth: current.sidebarWidth,
+      isSidebarHidden: current.isSidebarHidden,
+      contextPanelWidth: current.contextPanelWidth,
+      isContextPanelHidden: current.isContextPanelHidden,
+      collapsedProjectKeys: [...current.collapsedProjectKeys],
+      contentLayout: current.contentLayout,
+      composerContextUsageDisplayMode: current.composerContextUsageDisplayMode,
     }
 
     this.persistence.set(getSidebarStateStorageKey(), state)

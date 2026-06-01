@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
+import { observe } from '@legendapp/state'
 import { beforeEach, describe, expect, it } from 'vitest'
-
 import { createMemoryPersistencePort } from '../../platform/persistence'
 import { MIN_CONTEXT_PANEL_WIDTH, MIN_SIDEBAR_WIDTH, UIStore } from '../UIStore'
 
@@ -27,12 +27,12 @@ describe('UIStore', () => {
 
     const restoredStore = new UIStore()
 
-    expect(restoredStore.sidebarWidth).toBe(600)
-    expect(restoredStore.contextPanelWidth).toBe(600)
-    expect(restoredStore.composerContextUsageDisplayMode).toBe('tokens')
+    expect(restoredStore.state$.sidebarWidth.get()).toBe(600)
+    expect(restoredStore.state$.contextPanelWidth.get()).toBe(600)
+    expect(restoredStore.state$.composerContextUsageDisplayMode.get()).toBe('tokens')
     expect(restoredStore.isProjectCollapsed('project-alpha')).toBe(true)
-    expect(restoredStore.isSidebarHidden).toBe(true)
-    expect(restoredStore.isContextPanelHidden).toBe(true)
+    expect(restoredStore.state$.isSidebarHidden.get()).toBe(true)
+    expect(restoredStore.state$.isContextPanelHidden.get()).toBe(true)
   })
 
   it('enforces the minimum width clamp', () => {
@@ -41,8 +41,8 @@ describe('UIStore', () => {
     store.setSidebarWidth(20)
     store.setContextPanelWidth(20)
 
-    expect(store.sidebarWidth).toBe(MIN_SIDEBAR_WIDTH)
-    expect(store.contextPanelWidth).toBe(MIN_CONTEXT_PANEL_WIDTH)
+    expect(store.state$.sidebarWidth.get()).toBe(MIN_SIDEBAR_WIDTH)
+    expect(store.state$.contextPanelWidth.get()).toBe(MIN_CONTEXT_PANEL_WIDTH)
   })
 
   it('persists independent sidebar state for each window scope', () => {
@@ -56,20 +56,20 @@ describe('UIStore', () => {
     window.history.replaceState({}, '', '?windowId=window-beta')
     const betaStore = new UIStore()
 
-    expect(betaStore.isSidebarHidden).toBe(false)
-    expect(betaStore.sidebarWidth).toBe(256)
-    expect(betaStore.isContextPanelHidden).toBe(false)
-    expect(betaStore.contextPanelWidth).toBe(320)
+    expect(betaStore.state$.isSidebarHidden.get()).toBe(false)
+    expect(betaStore.state$.sidebarWidth.get()).toBe(256)
+    expect(betaStore.state$.isContextPanelHidden.get()).toBe(false)
+    expect(betaStore.state$.contextPanelWidth.get()).toBe(320)
 
     betaStore.toggleProjectCollapsed('project-beta')
 
     window.history.replaceState({}, '', '?windowId=window-alpha')
     const restoredAlphaStore = new UIStore()
 
-    expect(restoredAlphaStore.isSidebarHidden).toBe(true)
-    expect(restoredAlphaStore.sidebarWidth).toBe(420)
-    expect(restoredAlphaStore.isContextPanelHidden).toBe(true)
-    expect(restoredAlphaStore.contextPanelWidth).toBe(420)
+    expect(restoredAlphaStore.state$.isSidebarHidden.get()).toBe(true)
+    expect(restoredAlphaStore.state$.sidebarWidth.get()).toBe(420)
+    expect(restoredAlphaStore.state$.isContextPanelHidden.get()).toBe(true)
+    expect(restoredAlphaStore.state$.contextPanelWidth.get()).toBe(420)
     expect(restoredAlphaStore.isProjectCollapsed('project-beta')).toBe(false)
   })
 
@@ -93,32 +93,47 @@ describe('UIStore', () => {
         sidebarWidth: 420,
       }),
     )
-    expect(restoredAlphaStore.isSidebarHidden).toBe(true)
-    expect(restoredAlphaStore.sidebarWidth).toBe(420)
-    expect(betaStore.isSidebarHidden).toBe(false)
+    expect(restoredAlphaStore.state$.isSidebarHidden.get()).toBe(true)
+    expect(restoredAlphaStore.state$.sidebarWidth.get()).toBe(420)
+    expect(betaStore.state$.isSidebarHidden.get()).toBe(false)
   })
 
   it('tracks transient resize flags and command palette state', () => {
     const store = new UIStore()
 
-    expect(store.isResizingSidebar).toBe(false)
-    expect(store.isResizingContextPanel).toBe(false)
-    expect(store.isCommandPaletteOpen).toBe(false)
+    expect(store.state$.isResizingSidebar.get()).toBe(false)
+    expect(store.state$.isResizingContextPanel.get()).toBe(false)
+    expect(store.state$.isCommandPaletteOpen.get()).toBe(false)
 
     store.setIsResizingSidebar(true)
     store.setIsResizingContextPanel(true)
     store.openCommandPalette()
 
-    expect(store.isResizingSidebar).toBe(true)
-    expect(store.isResizingContextPanel).toBe(true)
-    expect(store.isCommandPaletteOpen).toBe(true)
+    expect(store.state$.isResizingSidebar.get()).toBe(true)
+    expect(store.state$.isResizingContextPanel.get()).toBe(true)
+    expect(store.state$.isCommandPaletteOpen.get()).toBe(true)
 
     store.setIsResizingSidebar(false)
     store.setIsResizingContextPanel(false)
     store.closeCommandPalette()
 
-    expect(store.isResizingSidebar).toBe(false)
-    expect(store.isResizingContextPanel).toBe(false)
-    expect(store.isCommandPaletteOpen).toBe(false)
+    expect(store.state$.isResizingSidebar.get()).toBe(false)
+    expect(store.state$.isResizingContextPanel.get()).toBe(false)
+    expect(store.state$.isCommandPaletteOpen.get()).toBe(false)
+  })
+
+  it('exposes UI state as a Legend observable data graph', () => {
+    const store = new UIStore()
+    const observedHiddenStates: boolean[] = []
+    const dispose = observe(() => {
+      observedHiddenStates.push(store.state$.isSidebarHidden.get())
+    })
+
+    store.toggleSidebar()
+    store.showSidebar()
+    dispose()
+
+    expect(observedHiddenStates).toEqual([false, true, false])
+    expect(store).not.toHaveProperty('stateNode')
   })
 })

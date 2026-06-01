@@ -1,5 +1,5 @@
+import { observe } from '@legendapp/state'
 import { type PointerEvent as ReactPointerEvent, useCallback, useRef } from 'react'
-import { observe } from '../stores/legend'
 import type { UIStore } from '../stores/UIStore'
 import { useMountEffect } from './useMountEffect'
 
@@ -20,16 +20,22 @@ export function usePanelResize({ uiStore }: UsePanelResizeOptions): UsePanelResi
     const stopSyncingDimensions = observe(() => {
       document.documentElement.style.setProperty(
         '--oxox-sidebar-width',
-        `${uiStore.sidebarWidth}px`,
+        `${uiStore.state$.sidebarWidth.get()}px`,
       )
       document.documentElement.style.setProperty(
         '--oxox-context-panel-width',
-        `${uiStore.contextPanelWidth}px`,
+        `${uiStore.state$.contextPanelWidth.get()}px`,
       )
     })
     const stopSyncingResizeClasses = observe(() => {
-      document.body.classList.toggle('oxox-sidebar-resizing', uiStore.isResizingSidebar)
-      document.body.classList.toggle('oxox-context-panel-resizing', uiStore.isResizingContextPanel)
+      document.body.classList.toggle(
+        'oxox-sidebar-resizing',
+        uiStore.state$.isResizingSidebar.get(),
+      )
+      document.body.classList.toggle(
+        'oxox-context-panel-resizing',
+        uiStore.state$.isResizingContextPanel.get(),
+      )
     })
     const syncWindowWidths = () => {
       uiStore.syncSidebarWidth()

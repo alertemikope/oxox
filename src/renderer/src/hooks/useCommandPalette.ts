@@ -57,7 +57,7 @@ export function useCommandPalette({
   const paletteFocusTargetRef = useRef<(() => void) | null>(null)
 
   const openPalette = useCallback(() => {
-    if (uiStore.isCommandPaletteOpen) {
+    if (uiStore.state$.isCommandPaletteOpen.get()) {
       return
     }
 

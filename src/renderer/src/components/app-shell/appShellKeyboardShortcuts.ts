@@ -1,3 +1,5 @@
+import type { UIStore } from '../../stores/UIStore'
+
 interface AppShellKeyboardShortcutsOptions {
   composerStore: {
     canAttachSelected: boolean
@@ -10,12 +12,7 @@ interface AppShellKeyboardShortcutsOptions {
     closeForm: () => void
     showForm: boolean
   }
-  uiStore: {
-    isCommandPaletteOpen: boolean
-    isContextPanelHidden: boolean
-    toggleContextPanel: () => void
-    toggleSidebar: () => void
-  }
+  uiStore: UIStore
   closeCommandPalette: () => void
   openCommandPalette: () => void
   onAttachSelectedSession: () => void
@@ -64,9 +61,9 @@ export function createAppShellKeyboardShortcuts({
       key: 'escape',
       allowInEditable: true,
       handler: () => {
-        if (uiStore.isCommandPaletteOpen) return closeCommandPalette()
+        if (uiStore.state$.isCommandPaletteOpen.get()) return closeCommandPalette()
         if (newSessionForm.showForm) return newSessionForm.closeForm()
-        if (!uiStore.isContextPanelHidden) {
+        if (!uiStore.state$.isContextPanelHidden.get()) {
           uiStore.toggleContextPanel()
           onFocusContextPanelToggle()
         }

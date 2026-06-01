@@ -1,4 +1,4 @@
-import { useValue } from '../../stores/legend'
+import { useValue } from '@legendapp/state/react'
 import { useLiveSessionStore, useSessionStore, useUIStore } from '../../stores/StoreProvider'
 import { useAppShellControllerContext } from './AppShellControllerContext'
 import { AppTopBar } from './AppTopBar'
@@ -8,9 +8,9 @@ export function AppShellTopBarConnected() {
   const sessionStore = useSessionStore()
   const uiStore = useUIStore()
   const { newSessionForm } = useAppShellControllerContext()
-  const isSettingsOpen = useValue(() => uiStore.isSettingsOpen)
-  const isSidebarHidden = useValue(() => uiStore.isSidebarHidden)
-  const isContextPanelHidden = useValue(() => uiStore.isContextPanelHidden)
+  const isSettingsOpen = useValue(() => uiStore.isSettingsOpen())
+  const isSidebarHidden = useValue(uiStore.state$.isSidebarHidden)
+  const isContextPanelHidden = useValue(uiStore.state$.isContextPanelHidden)
   const sessionTitle = useValue(() =>
     newSessionForm.showForm
       ? 'New session'

@@ -1,6 +1,6 @@
+import { useObserveEffect, useValue } from '@legendapp/state/react'
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
 
-import { useObserveEffect, useValue } from '../../stores/legend'
 import {
   useFoundationStore,
   useLiveSessionStore,
@@ -66,7 +66,7 @@ export function ContextPanelConnected({
   const uiStore = useUIStore()
 
   useObserveEffect(() => {
-    const isContextPanelHidden = uiStore.isContextPanelHidden
+    const isContextPanelHidden = uiStore.state$.isContextPanelHidden.get()
     const selectedSnapshot = liveSessionStore.selectedSnapshot
     const selectedSessionId = selectedSnapshot?.sessionId ?? null
     const refreshKey = selectedSnapshot

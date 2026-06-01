@@ -1,8 +1,8 @@
+import { useValue } from '@legendapp/state/react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback } from 'react'
 
 import { createPanelVariants } from '../../lib/motion'
-import { readValue, useValue } from '../../stores/legend'
 import {
   useComposerStore,
   useFoundationStore,
@@ -37,8 +37,8 @@ export function AppShellSidebar({ prefersReducedMotion, shouldAnimate }: AppShel
     prefersReducedMotion,
     sessionStore,
   })
-  const isSettingsView = useValue(() => readValue(uiStore.isSettingsOpen))
-  const settingsSection = useValue(() => readValue(uiStore.settingsSection))
+  const isSettingsView = useValue(() => uiStore.isSettingsOpen())
+  const settingsSection = useValue(uiStore.state$.settingsSection)
 
   const handleCopySessionId = useCallback(
     (sessionId: string) => {

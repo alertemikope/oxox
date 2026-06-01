@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { createMemoryPersistencePort } from '../../../platform/persistence'
+import { UIStore } from '../../../stores/UIStore'
 import { buildSessionComposerProps } from '../sessionComposerSelectors'
 
 describe('buildSessionComposerProps', () => {
@@ -47,9 +49,7 @@ describe('buildSessionComposerProps', () => {
       sessionStore: {
         selectedSessionId: 'session-1',
       } as never,
-      uiStore: {
-        composerContextUsageDisplayMode: 'percentage',
-      } as never,
+      uiStore: new UIStore(createMemoryPersistencePort()),
     })
 
     expect(props.error).toBe('outer error')
@@ -123,9 +123,7 @@ describe('buildSessionComposerProps', () => {
       sessionStore: {
         selectedSessionId: '',
       } as never,
-      uiStore: {
-        composerContextUsageDisplayMode: 'tokens',
-      } as never,
+      uiStore: createUIStore({ composerContextUsageDisplayMode: 'tokens' }),
     })
 
     expect(props.composer.canComposeDetached).toBe(true)
@@ -157,3 +155,13 @@ describe('buildSessionComposerProps', () => {
     })
   })
 })
+
+function createUIStore({
+  composerContextUsageDisplayMode,
+}: {
+  composerContextUsageDisplayMode: 'percentage' | 'tokens'
+}): UIStore {
+  const uiStore = new UIStore(createMemoryPersistencePort())
+  uiStore.setComposerContextUsageDisplayMode(composerContextUsageDisplayMode)
+  return uiStore
+}

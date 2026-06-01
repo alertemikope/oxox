@@ -1,4 +1,4 @@
-import { useValue } from '../../stores/legend'
+import { useValue } from '@legendapp/state/react'
 import {
   useFoundationStore,
   useLiveSessionStore,
@@ -26,7 +26,7 @@ export function AppShellSidebarRegion({ prefersReducedMotion }: AppShellSidebarR
     prefersReducedMotion,
     sessionStore,
   })
-  const isSidebarHidden = useValue(() => uiStore.isSidebarHidden)
+  const isSidebarHidden = useValue(uiStore.state$.isSidebarHidden)
 
   if (isSidebarHidden) {
     return null

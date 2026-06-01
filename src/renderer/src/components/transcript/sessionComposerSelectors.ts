@@ -1,3 +1,4 @@
+import type { UIStore } from '../../stores/UIStore'
 import type { SessionComposerProps } from './SessionComposer'
 
 interface SessionComposerConnectedSelectorOptions {
@@ -61,9 +62,7 @@ interface SessionComposerConnectedSelectorOptions {
   sessionStore: {
     selectedSessionId: string
   }
-  uiStore: {
-    composerContextUsageDisplayMode: SessionComposerProps['composerContextUsageDisplayMode']
-  }
+  uiStore: UIStore
 }
 
 export function buildSessionComposerProps({
@@ -92,7 +91,7 @@ export function buildSessionComposerProps({
       canAttach: selectedSessionId ? composerStore.canAttachSelected : false,
       canComposeDetached: canUseDetachedComposer,
       composerContextUsage: composerStore.selectedComposerContextUsage,
-      composerContextUsageDisplayMode: uiStore.composerContextUsageDisplayMode,
+      composerContextUsageDisplayMode: uiStore.state$.composerContextUsageDisplayMode.get(),
       draft: composerStore.draft,
       isAttached: Boolean(liveSessionStore.selectedSnapshot),
       isAttaching: composerStore.isAttachingSelected,

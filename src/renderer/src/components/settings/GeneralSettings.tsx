@@ -1,11 +1,11 @@
-import { useValue } from '../../stores/legend'
+import { useValue } from '@legendapp/state/react'
 import { useUIStore } from '../../stores/StoreProvider'
 
 export function GeneralSettings() {
   const uiStore = useUIStore()
-  const isSidebarHidden = useValue(() => uiStore.isSidebarHidden)
-  const isContextPanelHidden = useValue(() => uiStore.isContextPanelHidden)
-  const composerContextUsageDisplayMode = useValue(() => uiStore.composerContextUsageDisplayMode)
+  const isSidebarHidden = useValue(uiStore.state$.isSidebarHidden)
+  const isContextPanelHidden = useValue(uiStore.state$.isContextPanelHidden)
+  const composerContextUsageDisplayMode = useValue(uiStore.state$.composerContextUsageDisplayMode)
 
   return (
     <div className="flex flex-col gap-6">

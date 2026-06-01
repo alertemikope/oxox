@@ -48,7 +48,7 @@ describe('usePanelResize', () => {
     })
 
     fireEvent.pointerMove(window, { clientX: 420 })
-    expect(uiStore.sidebarWidth).toBe(420)
+    expect(uiStore.state$.sidebarWidth.get()).toBe(420)
 
     fireEvent.pointerUp(window)
 
@@ -71,7 +71,7 @@ describe('usePanelResize', () => {
     })
 
     fireEvent.pointerMove(window, { clientX: 850 })
-    expect(uiStore.contextPanelWidth).toBe(350)
+    expect(uiStore.state$.contextPanelWidth.get()).toBe(350)
 
     fireEvent.pointerUp(window)
 
