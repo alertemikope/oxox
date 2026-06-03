@@ -87,7 +87,7 @@ describe('createDaemonSessionControl', () => {
     expect(liveSessionRuntime.attachSession).toHaveBeenCalledWith('session-beta', 'renderer:1')
   })
 
-  it('renames via daemon and fails if the refreshed catalog never shows the new title', async () => {
+  it('renames via daemon, refreshes catalog state, and leaves artifacts to sync', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'oxox-daemon-session-control-'))
     const sourcePath = join(directory, 'session-alpha.jsonl')
     writeFileSync(
@@ -113,9 +113,9 @@ describe('createDaemonSessionControl', () => {
     const daemonTransport = {
       supportsMethod: vi
         .fn()
-        .mockImplementation((method: string) => method === 'daemon.fork_session'),
+        .mockImplementation((method: string) => method === 'daemon.rename_session'),
       forkSession: vi.fn(),
-      renameSession: vi.fn(),
+      renameSession: vi.fn().mockResolvedValue({ success: true }),
       refreshSessions: vi.fn().mockResolvedValue(undefined),
     }
     const sessionCatalog = {
@@ -138,11 +138,12 @@ describe('createDaemonSessionControl', () => {
 
     await expect(control.renameSession('session-alpha', 'New title')).resolves.toBeUndefined()
 
-    expect(daemonTransport.renameSession).not.toHaveBeenCalled()
+    expect(daemonTransport.renameSession).toHaveBeenCalledWith('session-alpha', 'New title')
+    expect(daemonTransport.refreshSessions).toHaveBeenCalledTimes(1)
+    expect(sessionCatalog.syncArtifacts).toHaveBeenCalledTimes(1)
     expect(liveSessionRuntime.renameSession).toHaveBeenCalledWith('session-alpha', 'New title')
-    expect(readFileSync(sourcePath, 'utf8').split('\n')[0]).toContain('"sessionTitle":"New title"')
-    expect(readFileSync(sourcePath, 'utf8').split('\n')[0]).toContain(
-      '"isSessionTitleManuallySet":true',
+    expect(readFileSync(sourcePath, 'utf8').split('\n')[0]).toBe(
+      '{"type":"session_start","id":"session-alpha","title":"Old title"}',
     )
   })
 })

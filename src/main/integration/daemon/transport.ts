@@ -1,3 +1,4 @@
+import { protocol } from '@factory/droid-sdk'
 import WebSocket, { type RawData } from 'ws'
 
 import type {
@@ -19,6 +20,9 @@ const DEFAULT_RECONNECT_BASE_DELAY_MS = 1_000
 const DEFAULT_RECONNECT_MAX_DELAY_MS = 30_000
 const JSON_RPC_VERSION = '2.0'
 const FACTORY_API_VERSION = '1.0.0'
+const DAEMON_METHOD = protocol.daemon.DaemonDroidMethod
+const KNOWN_DAEMON_METHODS = new Set<string>(Object.values(DAEMON_METHOD))
+const AVAILABLE_SESSION_PAGE_SIZE = 100
 
 type RpcResponseEnvelope<TResult = unknown> = {
   jsonrpc: typeof JSON_RPC_VERSION
@@ -36,17 +40,23 @@ type RpcResponseEnvelope<TResult = unknown> = {
 type DaemonOpenedSession = {
   sessionId: string
   cwd?: string
-  updatedAt?: string
+  repoRoot?: string
+  updatedAt?: string | number
   workingState?: string
   title?: string
+  messagesCount?: number
+  callingSessionId?: string
 }
 
 type DaemonAvailableSession = {
   sessionId: string
   cwd?: string
-  updatedAt?: string
+  repoRoot?: string
+  updatedAt?: string | number
   title?: string
   archivedAt?: string
+  messagesCount?: number
+  callingSessionId?: string
 }
 
 type DaemonOpenedSessionsResult = {
@@ -58,6 +68,7 @@ type DaemonOpenedSessionsResult = {
 type DaemonAvailableSessionsResult = {
   sessions?: DaemonAvailableSession[]
   hasMore?: boolean
+  nextCursor?: number
 }
 
 type PendingRequest = {
@@ -114,9 +125,14 @@ function decodeMessage(data: RawData | string | Buffer): string {
   return Buffer.from(data as ArrayBuffer).toString('utf8')
 }
 
-function coerceIsoTimestamp(value?: string): string {
+function coerceIsoTimestamp(value?: string | number): string {
   if (!value) {
     return new Date().toISOString()
+  }
+
+  if (typeof value === 'number') {
+    const timestampMs = value < 1_000_000_000_000 ? value * 1000 : value
+    return new Date(timestampMs).toISOString()
   }
 
   return value
@@ -127,8 +143,12 @@ function mapWorkingStateToStatus(workingState?: string): string {
     case 'working':
     case 'running':
     case 'active':
+    case 'executing_tool':
+    case 'streaming_assistant_message':
+    case 'compacting_conversation':
       return 'active'
     case 'waiting':
+    case 'waiting_for_tool_confirmation':
       return 'waiting'
     case 'completed':
       return 'completed'
@@ -155,15 +175,16 @@ function normalizeDaemonSessions(
     sessionsById.set(session.sessionId, {
       id: session.sessionId,
       projectId: null,
-      projectWorkspacePath: session.cwd ?? null,
+      projectWorkspacePath: session.repoRoot ?? session.cwd ?? null,
       projectDisplayName: null,
-      parentSessionId: null,
+      parentSessionId: session.callingSessionId ?? null,
       derivationType: null,
+      messageCount: session.messagesCount,
       title: session.title ?? 'Daemon session',
       status: mapAvailableStateToStatus(session),
       transport: 'daemon',
       createdAt: timestamp,
-      lastActivityAt: session.updatedAt ?? null,
+      lastActivityAt: timestamp,
       updatedAt: timestamp,
     })
   }
@@ -175,15 +196,17 @@ function normalizeDaemonSessions(
     sessionsById.set(session.sessionId, {
       id: session.sessionId,
       projectId: null,
-      projectWorkspacePath: session.cwd ?? existing?.projectWorkspacePath ?? null,
+      projectWorkspacePath:
+        session.repoRoot ?? session.cwd ?? existing?.projectWorkspacePath ?? null,
       projectDisplayName: null,
-      parentSessionId: null,
+      parentSessionId: session.callingSessionId ?? existing?.parentSessionId ?? null,
       derivationType: null,
+      messageCount: session.messagesCount ?? existing?.messageCount,
       title: session.title ?? existing?.title ?? 'Daemon session',
       status: mapWorkingStateToStatus(session.workingState),
       transport: 'daemon',
       createdAt: existing?.createdAt ?? timestamp,
-      lastActivityAt: session.updatedAt ?? existing?.lastActivityAt ?? null,
+      lastActivityAt: timestamp,
       updatedAt: timestamp,
     })
   }
@@ -293,7 +316,7 @@ class ManagedDaemonTransport implements DaemonTransport {
   private connecting = false
   private reconnectAttempt = 0
   private hasConnectedOnce = false
-  private supportedMethods = new Set<string>()
+  private supportedMethods: Set<string> | null = null
 
   constructor(options: CreateDaemonTransportOptions) {
     this.authProvider = options.authProvider
@@ -342,39 +365,42 @@ class ManagedDaemonTransport implements DaemonTransport {
   }
 
   supportsMethod(method: string): boolean {
-    return this.supportedMethods.has(method)
+    if (this.status !== 'connected') {
+      return false
+    }
+
+    return this.supportedMethods?.has(method) ?? KNOWN_DAEMON_METHODS.has(method)
   }
 
   async forkSession(sessionId: string): Promise<{ newSessionId: string }> {
     const connection = this.requireConnection()
 
-    this.assertMethodSupported('daemon.fork_session')
+    this.assertMethodSupported(DAEMON_METHOD.FORK_SESSION)
 
-    return connection.request('daemon.fork_session', { sessionId })
+    return connection.request(DAEMON_METHOD.FORK_SESSION, { sessionId })
   }
 
   async renameSession(sessionId: string, title: string): Promise<{ success: true }> {
     const connection = this.requireConnection()
 
-    this.assertMethodSupported('daemon.rename_session')
+    this.assertMethodSupported(DAEMON_METHOD.RENAME_SESSION)
 
-    return connection.request('daemon.rename_session', { sessionId, title })
+    return connection.request(DAEMON_METHOD.RENAME_SESSION, { sessionId, title })
   }
 
   async refreshSessions(): Promise<void> {
     const connection = this.requireConnection()
-    const [openedResult, availableResult] = await Promise.all([
-      connection.request<DaemonOpenedSessionsResult>('daemon.list_opened_sessions', {}),
-      connection.request<DaemonAvailableSessionsResult>('daemon.list_available_sessions', {}),
+    const [openedResult, availableSessions] = await Promise.all([
+      connection.request<DaemonOpenedSessionsResult>(DAEMON_METHOD.LIST_OPENED_SESSIONS, {}),
+      this.listAvailableSessions(connection),
     ])
 
-    const nextSessions = normalizeDaemonSessions(
-      openedResult.sessions ?? [],
-      availableResult.sessions ?? [],
-    )
+    const nextSessions = normalizeDaemonSessions(openedResult.sessions ?? [], availableSessions)
     const sessionsChanged = !areDaemonSessionsEqual(this.sessions, nextSessions)
 
-    this.supportedMethods = new Set(openedResult.supportedMethods ?? [])
+    this.supportedMethods = openedResult.supportedMethods
+      ? new Set(openedResult.supportedMethods)
+      : null
     this.sessions = nextSessions
     this.lastSyncAt = new Date().toISOString()
 
@@ -410,7 +436,7 @@ class ManagedDaemonTransport implements DaemonTransport {
       }
 
       this.sessions = []
-      this.supportedMethods.clear()
+      this.supportedMethods = null
       this.updateState({
         status: this.hasConnectedOnce ? 'reconnecting' : 'disconnected',
         connectedPort: null,
@@ -439,16 +465,13 @@ class ManagedDaemonTransport implements DaemonTransport {
     try {
       await authenticateDaemonConnection(connection, credentials)
       const openedResult = await connection.request<DaemonOpenedSessionsResult>(
-        'daemon.list_opened_sessions',
+        DAEMON_METHOD.LIST_OPENED_SESSIONS,
         {},
       )
 
       this.assertDaemonCapabilities(openedResult)
 
-      const availableResult = await connection.request<DaemonAvailableSessionsResult>(
-        'daemon.list_available_sessions',
-        {},
-      )
+      const availableSessions = await this.listAvailableSessions(connection)
 
       this.teardownConnection()
       this.socket = socket
@@ -462,11 +485,10 @@ class ManagedDaemonTransport implements DaemonTransport {
       this.lastSyncAt = this.lastConnectedAt
       this.nextRetryDelayMs = null
       this.hasConnectedOnce = true
-      this.supportedMethods = new Set(openedResult.supportedMethods ?? [])
-      this.sessions = normalizeDaemonSessions(
-        openedResult.sessions ?? [],
-        availableResult.sessions ?? [],
-      )
+      this.supportedMethods = openedResult.supportedMethods
+        ? new Set(openedResult.supportedMethods)
+        : null
+      this.sessions = normalizeDaemonSessions(openedResult.sessions ?? [], availableSessions)
       this.emitStateChange()
       this.scheduleRefresh()
     } catch (error) {
@@ -477,7 +499,14 @@ class ManagedDaemonTransport implements DaemonTransport {
   }
 
   private assertDaemonCapabilities(openedResult: DaemonOpenedSessionsResult): void {
-    const requiredMethods = ['daemon.list_opened_sessions', 'daemon.list_available_sessions']
+    if (!openedResult.supportedMethods) {
+      return
+    }
+
+    const requiredMethods = [
+      DAEMON_METHOD.LIST_OPENED_SESSIONS,
+      DAEMON_METHOD.LIST_AVAILABLE_SESSIONS,
+    ]
 
     for (const method of requiredMethods) {
       if (!(openedResult.supportedMethods ?? []).includes(method)) {
@@ -487,9 +516,36 @@ class ManagedDaemonTransport implements DaemonTransport {
   }
 
   private assertMethodSupported(method: string): void {
-    if (!this.supportedMethods.has(method)) {
+    if (!this.supportsMethod(method)) {
       throw new Error(`Daemon missing required capability: ${method}`)
     }
+  }
+
+  private async listAvailableSessions(
+    connection: WsRpcConnection,
+  ): Promise<DaemonAvailableSession[]> {
+    const sessions: DaemonAvailableSession[] = []
+    let endBefore: number | undefined
+
+    do {
+      const result = await connection.request<DaemonAvailableSessionsResult>(
+        DAEMON_METHOD.LIST_AVAILABLE_SESSIONS,
+        {
+          limit: AVAILABLE_SESSION_PAGE_SIZE,
+          includeMissionMetadata: true,
+          ...(endBefore === undefined ? {} : { endBefore }),
+        },
+      )
+
+      sessions.push(...(result.sessions ?? []))
+      endBefore = result.nextCursor
+
+      if (!result.hasMore) {
+        break
+      }
+    } while (endBefore !== undefined)
+
+    return sessions
   }
 
   private openSocket(port: number): Promise<DaemonSocketLike> {
@@ -569,7 +625,7 @@ class ManagedDaemonTransport implements DaemonTransport {
     this.clearRefreshTimer()
     this.teardownConnection(error)
     this.sessions = []
-    this.supportedMethods.clear()
+    this.supportedMethods = null
     this.updateState({
       status: this.hasConnectedOnce ? 'reconnecting' : 'disconnected',
       connectedPort: null,

@@ -1,7 +1,6 @@
 import type { LiveSessionSnapshot } from '../../../shared/ipc/contracts'
 import type { FoundationLiveSessionRuntime } from '../foundation/liveSessionRuntime'
 import type { FoundationSessionCatalog } from '../foundation/sessionCatalog'
-import { findSessionTranscriptPath, renameSessionTitleInTranscript } from '../transcripts/mutations'
 import type { DaemonTransport } from './transport'
 
 export interface DaemonSessionControl {
@@ -17,7 +16,6 @@ export function createDaemonSessionControl({
   daemonTransport,
   liveSessionRuntime,
   sessionCatalog,
-  sessionsRoot,
 }: {
   daemonTransport: Pick<
     DaemonTransport,
@@ -35,7 +33,7 @@ export function createDaemonSessionControl({
   return {
     getCapabilities: () => ({
       canFork: daemonTransport.supportsMethod('daemon.fork_session'),
-      canRename: true,
+      canRename: daemonTransport.supportsMethod('daemon.rename_session'),
     }),
 
     async forkSession(sessionId: string, viewerId?: string): Promise<LiveSessionSnapshot> {
@@ -58,15 +56,13 @@ export function createDaemonSessionControl({
     },
 
     async renameSession(sessionId: string, title: string): Promise<void> {
-      const sourcePath = findSessionTranscriptPath(sessionsRoot, sessionId)
-
-      if (!sourcePath) {
-        throw new Error(`Session transcript not found for ${sessionId}`)
+      if (!daemonTransport.supportsMethod('daemon.rename_session')) {
+        throw new Error('Daemon missing required capability: daemon.rename_session')
       }
 
-      await renameSessionTitleInTranscript(sourcePath, title)
+      await daemonTransport.renameSession(sessionId, title)
+      await refreshEvidence()
       await liveSessionRuntime.renameSession(sessionId, title)
-      await sessionCatalog.syncArtifacts()
 
       const renamedRecord = sessionCatalog
         .listSessions()

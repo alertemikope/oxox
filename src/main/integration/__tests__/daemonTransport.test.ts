@@ -95,8 +95,9 @@ function getRequiredValue<T>(value: T | undefined, message: string): T {
 }
 
 async function flushMicrotasks(): Promise<void> {
-  await Promise.resolve()
-  await Promise.resolve()
+  for (let index = 0; index < 10; index += 1) {
+    await Promise.resolve()
+  }
 }
 
 describe('createDaemonTransport', () => {
@@ -258,6 +259,116 @@ describe('createDaemonTransport', () => {
 
     expect(transport.supportsMethod('daemon.fork_session')).toBe(true)
     expect(transport.supportsMethod('daemon.rename_session')).toBe(true)
+
+    await transport.stop()
+  })
+
+  it('accepts SDK-shaped daemon session lists, pages available sessions, and derives method support', async () => {
+    const sockets: MockWebSocket[] = []
+    const transport = createDaemonTransport({
+      authProvider: {
+        getApiKey: () => 'sdk-shaped-key',
+      },
+      createWebSocket: (url) => {
+        const socket = new MockWebSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+      resolveCandidatePorts: async () => [37643],
+      reconnectBaseDelayMs: 1_000,
+      refreshIntervalMs: 60_000,
+    })
+
+    transport.start()
+    await flushMicrotasks()
+
+    sockets[0]?.open()
+    await flushMicrotasks()
+    const socket = getRequiredValue(sockets[0], 'Expected daemon socket')
+
+    socket.respond(getLastRequestId(socket), { userId: 'user-1', orgId: 'org-1' })
+    await flushMicrotasks()
+    socket.respond(getLastRequestId(socket), {
+      sessions: [
+        {
+          sessionId: 'opened-sdk',
+          cwd: '/tmp/worktree',
+          repoRoot: '/tmp/repo',
+          updatedAt: 1_779_999_100,
+          workingState: 'executing_tool',
+          messagesCount: 7,
+          callingSessionId: 'parent-session',
+        },
+      ],
+    })
+    await flushMicrotasks()
+
+    expect(JSON.parse(socket.sentPayloads.at(-1) ?? '{}')).toMatchObject({
+      method: 'daemon.list_available_sessions',
+      params: {
+        limit: 100,
+        includeMissionMetadata: true,
+      },
+    })
+
+    socket.respond(getLastRequestId(socket), {
+      sessions: [
+        {
+          sessionId: 'available-page-one',
+          cwd: '/tmp/available-one',
+          updatedAt: 1_779_999_000,
+          title: 'Available page one',
+          messagesCount: 3,
+        },
+      ],
+      hasMore: true,
+      nextCursor: 1_779_998_900,
+    })
+    await flushMicrotasks()
+
+    expect(JSON.parse(socket.sentPayloads.at(-1) ?? '{}')).toMatchObject({
+      method: 'daemon.list_available_sessions',
+      params: {
+        endBefore: 1_779_998_900,
+      },
+    })
+
+    socket.respond(getLastRequestId(socket), {
+      sessions: [
+        {
+          sessionId: 'available-page-two',
+          cwd: '/tmp/available-two',
+          updatedAt: 1_779_998_800,
+          title: 'Available page two',
+        },
+      ],
+      hasMore: false,
+    })
+    await flushMicrotasks()
+
+    expect(transport.getStatus().status).toBe('connected')
+    expect(transport.supportsMethod('daemon.rename_session')).toBe(true)
+    expect(transport.supportsMethod('daemon.compact_session')).toBe(true)
+    expect(transport.listSessions()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'opened-sdk',
+          parentSessionId: 'parent-session',
+          projectWorkspacePath: '/tmp/repo',
+          messageCount: 7,
+          status: 'active',
+        }),
+        expect.objectContaining({
+          id: 'available-page-one',
+          messageCount: 3,
+          title: 'Available page one',
+        }),
+        expect.objectContaining({
+          id: 'available-page-two',
+          title: 'Available page two',
+        }),
+      ]),
+    )
 
     await transport.stop()
   })
