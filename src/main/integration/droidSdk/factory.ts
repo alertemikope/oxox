@@ -30,13 +30,6 @@ export interface DroidSdkConstructors {
 }
 
 const DEFAULT_DROID_PATH = 'droid'
-const DEFAULT_STREAM_JSONRPC_ARGS = [
-  'exec',
-  '--input-format',
-  'stream-jsonrpc',
-  '--output-format',
-  'stream-jsonrpc',
-] as const
 const SHELL_ENV_MARKER_START = '__OXOX_SHELL_ENV_START__'
 const SHELL_ENV_MARKER_END = '__OXOX_SHELL_ENV_END__'
 
@@ -57,7 +50,6 @@ export function buildDroidSdkProcessTransportOptions({
       shellPath,
       spawnSyncFn,
     }),
-    execArgs: [...DEFAULT_STREAM_JSONRPC_ARGS],
     execPath: droidPath,
   }
 }
@@ -81,7 +73,7 @@ export function buildDroidExecEnv({
 
   const mergedEnv = {
     ...processEnv,
-    ...(shellEnv ?? {}),
+    ...shellEnv,
   }
 
   return {

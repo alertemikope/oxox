@@ -186,7 +186,7 @@ function createRootStore(bootstrap: unknown, overrides: Record<string, unknown> 
           invokeCapability: vi.fn(),
           onCapabilitiesChanged: vi.fn(),
           onHostChanged: vi.fn(),
-          ...((overrides.plugin as Record<string, unknown> | undefined) ?? {}),
+          ...(overrides.plugin as Record<string, unknown> | undefined),
         },
         foundation: {
           getBootstrap: vi.fn().mockResolvedValue(bootstrap),
@@ -211,7 +211,7 @@ function createRootStore(bootstrap: unknown, overrides: Record<string, unknown> 
           updateSettings: vi.fn().mockResolvedValue(undefined),
           interrupt: vi.fn().mockResolvedValue(undefined),
           fork: vi.fn().mockResolvedValue(createLiveSnapshot({ sessionId: 'session-live-fork-1' })),
-          ...((overrides.session as Record<string, unknown> | undefined) ?? {}),
+          ...(overrides.session as Record<string, unknown> | undefined),
         },
         ...overrides,
       } as never,

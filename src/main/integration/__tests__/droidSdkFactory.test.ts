@@ -6,7 +6,7 @@ import {
 } from '../droidSdk/factory'
 
 describe('buildDroidSdkProcessTransportOptions', () => {
-  it('builds pinned stream-jsonrpc exec options for fresh sessions', () => {
+  it('builds SDK process transport options for fresh sessions without overriding SDK exec args', () => {
     expect(
       buildDroidSdkProcessTransportOptions({
         cwd: '/tmp/workspace',
@@ -38,12 +38,11 @@ describe('buildDroidSdkProcessTransportOptions', () => {
           '/Users/tester/.local/share/pnpm',
         ].join(':'),
       },
-      execArgs: ['exec', '--input-format', 'stream-jsonrpc', '--output-format', 'stream-jsonrpc'],
       execPath: '/opt/factory/bin/droid',
     })
   })
 
-  it('builds pinned stream-jsonrpc exec options for resumed sessions', () => {
+  it('builds SDK process transport options for resumed sessions without overriding SDK exec args', () => {
     expect(
       buildDroidSdkProcessTransportOptions({
         cwd: '/tmp/workspace',
@@ -70,7 +69,6 @@ describe('buildDroidSdkProcessTransportOptions', () => {
           '/Users/tester/.local/share/pnpm',
         ].join(':'),
       },
-      execArgs: ['exec', '--input-format', 'stream-jsonrpc', '--output-format', 'stream-jsonrpc'],
       execPath: 'droid',
     })
   })
@@ -117,7 +115,6 @@ describe('buildDroidSdkProcessTransportOptions', () => {
           '/Users/tester/.local/share/pnpm',
         ].join(':'),
       },
-      execArgs: ['exec', '--input-format', 'stream-jsonrpc', '--output-format', 'stream-jsonrpc'],
       execPath: '/opt/factory/bin/droid',
     })
 
@@ -188,7 +185,6 @@ describe('createDroidSdkSessionFactory', () => {
             '/Users/tester/.local/share/pnpm',
           ].join(':'),
         },
-        execArgs: ['exec', '--input-format', 'stream-jsonrpc', '--output-format', 'stream-jsonrpc'],
         execPath: '/opt/factory/bin/droid',
       },
     ])

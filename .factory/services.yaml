@@ -4,9 +4,12 @@ commands:
   build: pnpm run build
   typecheck: pnpm exec tsc --noEmit
   test: pnpm exec vitest run
-  lint: pnpm exec biome check .
+  lint: pnpm run lint
+  lint-biome: pnpm exec biome check .
+  lint-ox: pnpm exec oxlint . --deny-warnings
   format: pnpm exec biome format . --write
-  lint-fix: pnpm exec biome check . --fix
+  format-check: pnpm exec biome format .
+  lint-fix: pnpm exec biome check . --write
   package: pnpm run package
 
 services:

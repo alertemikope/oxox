@@ -44,6 +44,7 @@ const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as Package
 describe('packaging configuration', () => {
   it('defines electron-builder scripts for mac packaging', () => {
     expect(packageJson.devDependencies?.['electron-builder']).toBeDefined()
+    expect(packageJson.devDependencies?.oxlint).toBeDefined()
     expect(packageJson.dependencies?.['electron-updater']).toBeDefined()
     expect(packageJson.dependencies?.uuid).toBeDefined()
     expect(packageJson.scripts?.package).toBe('pnpm run build && electron-builder --mac --dir')
@@ -60,6 +61,11 @@ describe('packaging configuration', () => {
     expect(packageJson.scripts?.['dist:mac:all']).toBe(
       'pnpm run build && electron-builder --mac --x64 && electron-builder --mac --arm64',
     )
+    expect(packageJson.scripts?.['lint:biome']).toBe('biome check .')
+    expect(packageJson.scripts?.['lint:ox']).toBe('oxlint . --deny-warnings')
+    expect(packageJson.scripts?.lint).toBe('pnpm lint:biome && pnpm lint:ox')
+    expect(packageJson.scripts?.['check:fix']).toBe('biome check . --write')
+    expect(packageJson.scripts?.['format:check']).toBe('biome format .')
     expect(packageJson.scripts?.['release:validate']).toBe(
       'pnpm lint && pnpm typecheck && pnpm test',
     )
