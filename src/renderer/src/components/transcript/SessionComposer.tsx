@@ -179,6 +179,30 @@ export function SessionComposer({
     [isEditorDisabled, onImageAttachmentsAdd],
   )
 
+  const handleDroppedFiles = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0 || isEditorDisabled) return
+
+      const imageFiles = files.filter(isAcceptedImageFile)
+      const droppedPaths = files
+        .filter((file) => !isAcceptedImageFile(file))
+        .flatMap((file) => {
+          const path = getDroppedFilePath(file)
+          return path ? [path] : []
+        })
+
+      if (droppedPaths.length > 0) {
+        onDraftChange(appendDroppedPaths(draft, droppedPaths))
+      }
+
+      if (imageFiles.length > 0) {
+        const attachments = await Promise.all(imageFiles.map(readImageFileAsAttachment))
+        onImageAttachmentsAdd(attachments)
+      }
+    },
+    [draft, isEditorDisabled, onDraftChange, onImageAttachmentsAdd],
+  )
+
   const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const files = extractImageFilesFromItems(event.clipboardData.items)
     if (files.length === 0) return
@@ -188,16 +212,16 @@ export function SessionComposer({
   }
 
   const handleDragOver = (event: DragEvent<HTMLTextAreaElement>) => {
-    if (isEditorDisabled || !hasImageDataTransferItems(event.dataTransfer.items)) return
+    if (isEditorDisabled || !hasFileDataTransferItems(event.dataTransfer.items)) return
     event.preventDefault()
   }
 
   const handleDrop = (event: DragEvent<HTMLTextAreaElement>) => {
-    const files = extractImageFilesFromDataTransfer(event.dataTransfer)
+    const files = extractFilesFromDataTransfer(event.dataTransfer)
     if (files.length === 0) return
 
     event.preventDefault()
-    void handleImageFiles(files)
+    void handleDroppedFiles(files)
   }
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -529,19 +553,42 @@ function extractImageFilesFromItems(items: DataTransferItemList): File[] {
     })
 }
 
-function extractImageFilesFromDataTransfer(dataTransfer: DataTransfer): File[] {
-  const itemFiles = dataTransfer.items ? extractImageFilesFromItems(dataTransfer.items) : []
+function extractFilesFromDataTransfer(dataTransfer: DataTransfer): File[] {
+  const itemFiles = dataTransfer.items ? extractFilesFromItems(dataTransfer.items) : []
   if (itemFiles.length > 0) return itemFiles
 
-  return Array.from(dataTransfer.files).filter(isAcceptedImageFile)
+  return Array.from(dataTransfer.files)
 }
 
-function hasImageDataTransferItems(items: DataTransferItemList): boolean {
-  return Array.from(items).some(
-    (item) =>
-      item.kind === 'file' &&
-      ACCEPTED_IMAGE_TYPES.has(item.type as LiveSessionMessageImageSource['mediaType']),
-  )
+function extractFilesFromItems(items: DataTransferItemList): File[] {
+  return Array.from(items)
+    .filter((item) => item.kind === 'file')
+    .flatMap((item) => {
+      const file = item.getAsFile()
+      return file ? [file] : []
+    })
+}
+
+function hasFileDataTransferItems(items: DataTransferItemList): boolean {
+  return Array.from(items).some((item) => item.kind === 'file')
+}
+
+function getDroppedFilePath(file: File): string | null {
+  const bridgePath = window.oxox?.dialog.getPathForFile?.(file)
+  if (bridgePath) return bridgePath
+
+  const path = Reflect.get(file, 'path')
+  return typeof path === 'string' && path.length > 0 ? path : null
+}
+
+function appendDroppedPaths(draft: string, paths: string[]): string {
+  const pathText = paths.map(quoteDroppedPath).join('\n')
+  if (draft.length === 0) return pathText
+  return draft.endsWith('\n') ? `${draft}${pathText}` : `${draft}\n${pathText}`
+}
+
+function quoteDroppedPath(path: string): string {
+  return `"${path.replaceAll('"', '\\"')}"`
 }
 
 function readImageFileAsAttachment(file: File): Promise<ComposerImageAttachment> {

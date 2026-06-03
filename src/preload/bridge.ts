@@ -77,6 +77,7 @@ export function createOxoxBridge(
   invoke: InvokeHandlerWithArgs,
   on: SubscribeHandler = () => undefined,
   off: UnsubscribeHandler = () => undefined,
+  getPathForFile: (file: File) => string | null = () => null,
 ): OxoxBridge {
   return {
     runtime: {
@@ -123,6 +124,7 @@ export function createOxoxBridge(
     },
     dialog: {
       selectDirectory: () => invokeTyped<string | null>(invoke, IPC_CHANNELS.dialogSelectDirectory),
+      getPathForFile,
     },
     foundation: {
       getBootstrap: () =>

@@ -812,6 +812,7 @@ export interface OxoxBridge {
   }
   dialog: {
     selectDirectory: () => Promise<string | null>
+    getPathForFile?: (file: File) => string | null
   }
   foundation: {
     getBootstrap: () => Promise<FoundationBootstrap>

@@ -196,6 +196,129 @@ describe('SessionComposer', () => {
     expect(onSubmit.mock.calls[0]?.[0]).not.toHaveProperty('images')
   })
 
+  it('appends dropped non-image file paths to the draft', () => {
+    const documentFile = createDroppedFileWithPath(
+      ['notes'],
+      'Dia Recovery Kit.pdf',
+      'text/plain',
+      '/Users/brojbean/Documents/Dia Recovery Kit.pdf',
+    )
+
+    render(<ControlledComposer />)
+
+    const composer = screen.getByLabelText(/Message composer/i) as HTMLTextAreaElement
+    fireEvent.change(composer, {
+      target: { value: 'Review this file:' },
+    })
+    fireEvent.drop(composer, {
+      dataTransfer: {
+        files: [documentFile],
+        items: [
+          {
+            kind: 'file',
+            type: 'text/plain',
+            getAsFile: () => documentFile,
+          },
+        ],
+      },
+    })
+
+    expect(composer.value).toBe(
+      'Review this file:\n"/Users/brojbean/Documents/Dia Recovery Kit.pdf"',
+    )
+  })
+
+  it('uses the Electron bridge to resolve dropped file paths when File.path is unavailable', () => {
+    const previousOxox = Reflect.get(window, 'oxox')
+    const documentFile = new File(['notes'], 'notes.txt', { type: 'text/plain' })
+
+    window.oxox = {
+      dialog: {
+        selectDirectory: vi.fn(),
+        getPathForFile: vi.fn(() => '/Users/brojbean/Documents/Dia Recovery Kit.pdf'),
+      },
+    } as unknown as typeof window.oxox
+
+    try {
+      render(<ControlledComposer />)
+
+      const composer = screen.getByLabelText(/Message composer/i) as HTMLTextAreaElement
+      fireEvent.drop(composer, {
+        dataTransfer: {
+          files: [documentFile],
+          items: [
+            {
+              kind: 'file',
+              type: 'text/plain',
+              getAsFile: () => documentFile,
+            },
+          ],
+        },
+      })
+
+      expect(window.oxox.dialog.getPathForFile).toHaveBeenCalledWith(documentFile)
+      expect(composer.value).toBe('"/Users/brojbean/Documents/Dia Recovery Kit.pdf"')
+    } finally {
+      if (previousOxox) {
+        window.oxox = previousOxox
+      } else {
+        Reflect.deleteProperty(window, 'oxox')
+      }
+    }
+  })
+
+  it('handles mixed dropped image attachments and non-image file paths', async () => {
+    const imageFile = createDroppedFileWithPath(
+      ['fake image'],
+      'screenshot.png',
+      'image/png',
+      '/Users/adrian/project/screenshot.png',
+    )
+    const sourceFile = createDroppedFileWithPath(
+      ['source'],
+      'index.ts',
+      'video/mp2t',
+      '/Users/adrian/project/src/index with spaces.ts',
+    )
+    const folderEntry = createDroppedFileWithPath(
+      [],
+      'fixtures',
+      '',
+      '/Users/adrian/project/fixtures',
+    )
+
+    render(<ControlledComposer />)
+
+    const composer = screen.getByLabelText(/Message composer/i) as HTMLTextAreaElement
+    fireEvent.drop(composer, {
+      dataTransfer: {
+        files: [imageFile, sourceFile, folderEntry],
+        items: [
+          {
+            kind: 'file',
+            type: 'image/png',
+            getAsFile: () => imageFile,
+          },
+          {
+            kind: 'file',
+            type: 'video/mp2t',
+            getAsFile: () => sourceFile,
+          },
+          {
+            kind: 'file',
+            type: '',
+            getAsFile: () => folderEntry,
+          },
+        ],
+      },
+    })
+
+    expect(await screen.findByAltText('screenshot.png attachment preview')).toBeTruthy()
+    expect(composer.value).toBe(
+      '"/Users/adrian/project/src/index with spaces.ts"\n"/Users/adrian/project/fixtures"',
+    )
+  })
+
   it('shows a clear-all action for multiple image attachments', async () => {
     const firstImage = new File(['fake image 1'], 'first.png', { type: 'image/png' })
     const secondImage = new File(['fake image 2'], 'second.png', { type: 'image/png' })
@@ -375,3 +498,17 @@ describe('SessionComposer', () => {
     expect(composer.className).toContain('focus-visible:shadow-none')
   })
 })
+
+function createDroppedFileWithPath(
+  bits: BlobPart[],
+  name: string,
+  type: string,
+  path: string,
+): File {
+  const file = new File(bits, name, { type })
+  Object.defineProperty(file, 'path', {
+    value: path,
+    configurable: true,
+  })
+  return file
+}

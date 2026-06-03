@@ -38,6 +38,21 @@ describe('createOxoxBridge', () => {
     })
   })
 
+  it('exposes an Electron file path resolver through the dialog bridge', () => {
+    const file = new File(['notes'], 'notes.txt', { type: 'text/plain' })
+    const bridge = createOxoxBridge(
+      vi.fn(),
+      undefined,
+      undefined,
+      vi.fn(() => '/Users/adrian/project/notes.txt'),
+    )
+    const dialog = bridge.dialog as typeof bridge.dialog & {
+      getPathForFile: (file: File) => string | null
+    }
+
+    expect(dialog.getPathForFile(file)).toBe('/Users/adrian/project/notes.txt')
+  })
+
   it('invokes transcript performance diagnostics through the typed bridge', async () => {
     const invoke = vi.fn().mockResolvedValue(undefined)
     const bridge = createOxoxBridge(invoke)
