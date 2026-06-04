@@ -9,6 +9,7 @@ import {
 } from 'react'
 
 import type {
+  FoundationBootstrap,
   LiveSessionContextStatsInfo,
   LiveSessionEventRecord,
   LiveSessionMcpRegistryServerInfo,
@@ -27,6 +28,7 @@ import { SkeletonBlock } from '../ui/skeleton'
 import { StateCard } from '../ui/state-card'
 
 export interface ContextPanelProps {
+  factoryDefaultSettings?: FoundationBootstrap['factoryDefaultSettings']
   selectedSession?: SessionPreview
   liveSession: LiveSessionSnapshot | null
   runtimeCatalog?: {
@@ -77,6 +79,7 @@ const CONTEXT_PANEL_SKELETON_IDS = [
 ]
 
 export function ContextPanel({
+  factoryDefaultSettings = {},
   selectedSession,
   liveSession,
   runtimeCatalog,
@@ -102,6 +105,7 @@ export function ContextPanel({
   const contextStats = runtimeCatalog?.contextStats
     ? normalizeContextStats(runtimeCatalog.contextStats)
     : null
+  const compactionSettings = resolveCompactionSettings(liveSession, factoryDefaultSettings)
   const latestResult = getLatestResult(liveSession?.events ?? [])
   const latestMcpAuthRequest = getLatestMcpAuthRequest(liveSession?.events ?? [])
 
@@ -287,9 +291,17 @@ export function ContextPanel({
                 </DetailSection>
               ) : null}
 
-              {liveSession && contextStats ? (
+              {liveSession && (contextStats || compactionSettings) ? (
                 <DetailSection title="Context window">
-                  <ContextStatsCard stats={contextStats} />
+                  <div className="flex flex-col gap-2">
+                    {contextStats ? <ContextStatsCard stats={contextStats} /> : null}
+                    {compactionSettings ? (
+                      <CompactionSettingsCard
+                        settings={compactionSettings}
+                        usedContext={contextStats?.used ?? null}
+                      />
+                    ) : null}
+                  </div>
                 </DetailSection>
               ) : null}
 
@@ -535,6 +547,9 @@ function ContextStatsCard({ stats }: { stats: LiveSessionContextStatsInfo }) {
           style={{ width: `${clampedPercentage}%` }}
         />
       </div>
+      <p className="mt-1.5 font-mono text-[10px] tabular-nums text-fd-tertiary">
+        {normalizedStats.limit.toLocaleString()} token window
+      </p>
       <div className="mt-1.5 flex items-center justify-between">
         <span className="font-mono text-[10px] tabular-nums text-fd-secondary">
           {normalizedStats.used.toLocaleString()} used
@@ -543,6 +558,71 @@ function ContextStatsCard({ stats }: { stats: LiveSessionContextStatsInfo }) {
           {normalizedStats.remaining.toLocaleString()} remaining
         </span>
       </div>
+      <p className="mt-1.5 text-[10px] leading-snug text-fd-quaternary">
+        The context window is the active conversation Droid can fit into the model. Processed tokens
+        can be higher because cache reads and previous turns are counted separately.
+      </p>
+    </div>
+  )
+}
+
+interface CompactionSettings {
+  isEnabled?: boolean
+  thresholdTokens?: number
+  sourceLabel: string
+}
+
+function CompactionSettingsCard({
+  settings,
+  usedContext,
+}: {
+  settings: CompactionSettings
+  usedContext: number | null
+}) {
+  const thresholdRemaining =
+    typeof settings.thresholdTokens === 'number' && usedContext !== null
+      ? Math.max(0, settings.thresholdTokens - usedContext)
+      : null
+
+  return (
+    <div className="rounded-md border border-fd-border-subtle bg-fd-panel/50 p-2">
+      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-fd-tertiary">
+        Compaction
+      </p>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[10px] text-fd-tertiary">Automatic compaction</span>
+        {typeof settings.isEnabled === 'boolean' ? (
+          <span
+            className={`rounded px-1.5 py-0.5 text-[9px] font-medium ${
+              settings.isEnabled
+                ? 'bg-fd-ready/15 text-fd-ready'
+                : 'bg-fd-border-subtle text-fd-tertiary'
+            }`}
+          >
+            {settings.isEnabled ? 'Enabled' : 'Disabled'}
+          </span>
+        ) : (
+          <span className="text-[10px] text-fd-tertiary">Default</span>
+        )}
+      </div>
+      {typeof settings.thresholdTokens === 'number' ? (
+        <p className="mt-1 font-mono text-[10px] tabular-nums text-fd-secondary">
+          {settings.thresholdTokens.toLocaleString()} threshold
+        </p>
+      ) : null}
+      {thresholdRemaining !== null && settings.isEnabled !== false ? (
+        <p className="mt-1 font-mono text-[10px] tabular-nums text-fd-secondary">
+          {thresholdRemaining.toLocaleString()} before threshold
+        </p>
+      ) : null}
+      <p className="mt-1.5 text-[10px] leading-snug text-fd-quaternary">
+        {settings.isEnabled === false
+          ? 'Threshold checks are disabled for new Droid sessions.'
+          : 'Droid compacts long-running sessions near this threshold to keep useful context available.'}
+      </p>
+      <p className="mt-1 text-[9px] uppercase tracking-wider text-fd-quaternary">
+        {settings.sourceLabel}
+      </p>
     </div>
   )
 }
@@ -803,6 +883,48 @@ function formatStatusLabel(value: string): string {
 
 function formatSettingValue(value: string | undefined): string {
   return value && value.length > 0 ? value : 'Default'
+}
+
+function resolveCompactionSettings(
+  liveSession: LiveSessionSnapshot | null,
+  factoryDefaultSettings: FoundationBootstrap['factoryDefaultSettings'],
+): CompactionSettings | null {
+  const sessionSettings = isRecord(liveSession?.settings) ? liveSession.settings : {}
+  const sessionThresholdEnabled = toOptionalBoolean(sessionSettings.compactionThresholdCheckEnabled)
+  const sessionThresholdTokens = toOptionalPositiveNumber(sessionSettings.compactionTokenLimit)
+  const defaultThresholdEnabled = toOptionalBoolean(
+    factoryDefaultSettings.compactionThresholdCheckEnabled,
+  )
+  const defaultThresholdTokens = toOptionalPositiveNumber(
+    factoryDefaultSettings.compactionTokenLimit,
+  )
+  const isEnabled = sessionThresholdEnabled ?? defaultThresholdEnabled
+  const thresholdTokens = sessionThresholdTokens ?? defaultThresholdTokens
+
+  if (typeof isEnabled !== 'boolean' && typeof thresholdTokens !== 'number') {
+    return null
+  }
+
+  return {
+    ...(typeof isEnabled === 'boolean' ? { isEnabled } : {}),
+    ...(typeof thresholdTokens === 'number' ? { thresholdTokens } : {}),
+    sourceLabel:
+      typeof sessionThresholdEnabled === 'boolean' || typeof sessionThresholdTokens === 'number'
+        ? 'Session setting'
+        : 'Droid default',
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function toOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined
+}
+
+function toOptionalPositiveNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
 }
 
 function formatContextAccuracy(value: LiveSessionContextStatsInfo['accuracy']): string {

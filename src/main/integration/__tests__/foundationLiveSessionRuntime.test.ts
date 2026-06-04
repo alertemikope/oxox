@@ -81,7 +81,9 @@ describe('createFoundationLiveSessionRuntime', () => {
       sessionProcessManager: processManager,
     })
 
-    await expect(runtime.createSession('/tmp/project', 'renderer:1')).resolves.toMatchObject({
+    await expect(
+      runtime.createSession({ cwd: '/tmp/project' }, 'renderer:1'),
+    ).resolves.toMatchObject({
       sessionId: 'session-created',
       events: [expect.objectContaining({ error: 'stream failed' })],
     })
@@ -401,7 +403,7 @@ describe('createFoundationLiveSessionRuntime', () => {
     const listener = vi.fn()
     const unsubscribe = runtime.subscribeToSnapshots(listener)
 
-    await runtime.createSession('/tmp/project', 'renderer:1')
+    await runtime.createSession({ cwd: '/tmp/project' }, 'renderer:1')
     processManager.__sink?.({ type: 'message.delta' })
 
     expect(listener).toHaveBeenCalledWith('session-live-1')

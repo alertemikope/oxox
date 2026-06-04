@@ -9,6 +9,10 @@ describe('buildContextPanelProps', () => {
     const refresh = vi.fn()
     const props = buildContextPanelProps({
       foundationStore: {
+        factoryDefaultSettings: {
+          compactionThresholdCheckEnabled: true,
+          compactionTokenLimit: 120_000,
+        },
         hasError: true,
         isLoading: false,
         refresh,
@@ -37,6 +41,10 @@ describe('buildContextPanelProps', () => {
     expect(props.runtimeCatalog?.tools).toEqual([
       { id: 'tool-read', llmId: 'Read', currentlyAllowed: true, defaultAllowed: true },
     ])
+    expect(props.factoryDefaultSettings).toEqual({
+      compactionThresholdCheckEnabled: true,
+      compactionTokenLimit: 120_000,
+    })
     expect(props.selectedSession).toEqual({ id: 'session-1' })
     expect(props.width).toBe(360)
     expect(props.errorState?.actionLabel).toBe('Retry loading sessions')

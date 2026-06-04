@@ -78,6 +78,22 @@ describe('deriveDefaultComposerPreferences', () => {
     })
   })
 
+  it('uses the daemon default autonomy level when present', () => {
+    const bootstrap = createBootstrap({
+      factoryDefaultSettings: {
+        model: 'gpt-5.4',
+        interactionMode: 'auto',
+        autonomyLevel: 'high',
+      },
+    })
+    const prefs = deriveDefaultComposerPreferences(
+      bootstrap.factoryDefaultSettings,
+      bootstrap.factoryModels,
+    )
+
+    expect(prefs.autonomyLevel).toBe('high')
+  })
+
   it('uses first factory model when no default model', () => {
     const bootstrap = createBootstrap({
       factoryDefaultSettings: {},

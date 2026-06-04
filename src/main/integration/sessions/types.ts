@@ -6,6 +6,7 @@ import type {
   LiveSessionBugReportResult,
   LiveSessionCompactResult,
   LiveSessionContextStatsInfo,
+  LiveSessionCreateSettings,
   LiveSessionExecuteRewindParams,
   LiveSessionExecuteRewindResult,
   LiveSessionMcpAuthCodeRequest,
@@ -16,6 +17,7 @@ import type {
   LiveSessionRewindInfo,
   LiveSessionSkillInfo,
   LiveSessionToolInfo,
+  LiveSessionSettings as SharedLiveSessionSettings,
   TranscriptMessageContentBlock,
 } from '../../../shared/ipc/contracts'
 
@@ -60,17 +62,7 @@ export interface LiveSessionModel {
   maxContextLimit?: number | null
 }
 
-export interface LiveSessionSettings {
-  modelId?: string
-  interactionMode?: string
-  reasoningEffort?: string
-  autonomyLevel?: string
-  autonomyMode?: string
-  specModeModelId?: string
-  specModeReasoningEffort?: string
-  enabledToolIds?: string[]
-  disabledToolIds?: string[]
-}
+export type LiveSessionSettings = SharedLiveSessionSettings
 
 export type StreamJsonRpcLoadResult = {
   session: StreamJsonRpcSession
@@ -151,7 +143,13 @@ export interface LiveSessionNotificationSummary {
 
 export interface CreateSessionRequest {
   cwd: string
+  settings?: LiveSessionCreateSettings
   viewerId?: string
+}
+
+export interface InitializeSessionRequest {
+  cwd: string
+  settings?: LiveSessionCreateSettings
 }
 
 export interface AttachSessionRequest {
@@ -225,7 +223,10 @@ export interface ManagedSession {
 export interface StreamJsonRpcProcessTransportLike {
   readonly processId: number
   subscribe(sink: SessionEventSink): () => void
-  initializeSession(requestId: RequestId, cwd: string): Promise<StreamJsonRpcInitializeResult>
+  initializeSession(
+    requestId: RequestId,
+    request: string | InitializeSessionRequest,
+  ): Promise<StreamJsonRpcInitializeResult>
   loadSession(requestId: RequestId, sessionId: string): Promise<StreamJsonRpcLoadResult>
   interruptSession(requestId: RequestId): Promise<void>
   addUserMessage(

@@ -5,6 +5,7 @@ import type {
   LiveSessionBugReportResult,
   LiveSessionCompactResult,
   LiveSessionContextStatsInfo,
+  LiveSessionCreateRequest,
   LiveSessionEventRecord,
   LiveSessionExecuteRewindParams,
   LiveSessionExecuteRewindResult,
@@ -27,10 +28,11 @@ import type {
 } from '../sessions/types'
 
 interface SessionProcessManagerLike {
-  createSession: (request: {
-    cwd: string
-    viewerId?: string
-  }) => Promise<RuntimeLiveSessionSnapshot>
+  createSession: (
+    request: LiveSessionCreateRequest & {
+      viewerId?: string
+    },
+  ) => Promise<RuntimeLiveSessionSnapshot>
   getSessionSnapshot: (sessionId: string) => RuntimeLiveSessionSnapshot | null
   listSessionSnapshots: () => RuntimeLiveSessionSnapshot[]
   listSessionNotificationSummaries?: () => LiveSessionNotificationSummary[]
@@ -115,7 +117,10 @@ export interface CreateFoundationLiveSessionRuntimeOptions {
 }
 
 export interface FoundationLiveSessionRuntime {
-  createSession: (cwd: string, viewerId?: string) => Promise<LiveSessionSnapshot>
+  createSession: (
+    request: LiveSessionCreateRequest,
+    viewerId?: string,
+  ) => Promise<LiveSessionSnapshot>
   getSessionSnapshot: (sessionId: string) => LiveSessionSnapshot | null
   listLiveSessionSnapshots: () => LiveSessionSnapshot[]
   listLiveSessionNotificationSummaries: () => LiveSessionNotificationSummary[]
@@ -228,8 +233,8 @@ export function createFoundationLiveSessionRuntime({
   }
 
   return {
-    createSession: async (cwd, viewerId) => {
-      const snapshot = await sessionProcessManager.createSession({ cwd, viewerId })
+    createSession: async (request, viewerId) => {
+      const snapshot = await sessionProcessManager.createSession({ ...request, viewerId })
       ensureSessionSubscription(snapshot.sessionId)
       emitSnapshot(snapshot.sessionId)
       onChange?.()

@@ -39,7 +39,7 @@ export function selectProjectGroups(
   return Array.from(groups.values())
     .map((group) => ({
       ...group,
-      sessions: nestSubagentChildren([...group.sessions].sort(sortSessionsByRecency)),
+      sessions: nestDerivedSessions([...group.sessions].sort(sortSessionsByRecency)),
     }))
     .sort((left, right) => right.latestActivityAt - left.latestActivityAt)
 }
@@ -138,12 +138,17 @@ function upsertProjectGroup(
   })
 }
 
-function nestSubagentChildren(sessions: SessionPreview[]): SessionPreview[] {
+function nestDerivedSessions(sessions: SessionPreview[]): SessionPreview[] {
+  const sessionIds = new Set(sessions.map((session) => session.id))
   const childrenByParent = new Map<string, SessionPreview[]>()
   const topLevel: SessionPreview[] = []
 
   for (const session of sessions) {
-    if (session.derivationType === 'subagent' && session.parentSessionId) {
+    if (
+      session.derivationType &&
+      session.parentSessionId &&
+      sessionIds.has(session.parentSessionId)
+    ) {
       const siblings = childrenByParent.get(session.parentSessionId)
       if (siblings) {
         siblings.push(session)
@@ -160,18 +165,31 @@ function nestSubagentChildren(sessions: SessionPreview[]): SessionPreview[] {
   }
 
   const result: SessionPreview[] = []
+  const visited = new Set<string>()
 
-  for (const session of topLevel) {
+  const appendSession = (session: SessionPreview): void => {
+    if (visited.has(session.id)) {
+      return
+    }
+
+    visited.add(session.id)
     result.push(session)
+
     const children = childrenByParent.get(session.id)
     if (children) {
-      result.push(...children)
+      for (const child of children) {
+        appendSession(child)
+      }
       childrenByParent.delete(session.id)
     }
   }
 
-  for (const orphans of childrenByParent.values()) {
-    result.push(...orphans)
+  for (const session of topLevel) {
+    appendSession(session)
+  }
+
+  for (const session of sessions) {
+    appendSession(session)
   }
 
   return result

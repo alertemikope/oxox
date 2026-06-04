@@ -302,7 +302,10 @@ export function createSessionProcessManager(options: CreateSessionProcessManager
   return {
     async createSession(request: CreateSessionRequest): Promise<LiveSessionSnapshot> {
       const transport = createTransport(null, request.cwd)
-      const result = await transport.initializeSession(nextRequestId('session:create'), request.cwd)
+      const result = await transport.initializeSession(nextRequestId('session:create'), {
+        cwd: request.cwd,
+        ...(request.settings ? { settings: request.settings } : {}),
+      })
       const messages = normalizeMessages(result.session.messages)
       const managedSession = createManagedSession(
         result.sessionId,

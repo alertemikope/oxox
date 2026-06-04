@@ -208,6 +208,7 @@ describe('createDaemonTransport', () => {
           cwd: '/tmp/daemon-workspace',
           updatedAt: '2026-03-24T22:00:00.000Z',
           workingState: 'working',
+          callingSessionId: 'parent-session',
         },
       ],
     })
@@ -225,6 +226,7 @@ describe('createDaemonTransport', () => {
           cwd: '/tmp/daemon-workspace',
           title: 'Daemon wins',
           updatedAt: '2026-03-24T22:01:00.000Z',
+          callingSessionId: 'parent-session',
         },
         {
           sessionId: 'daemon-available',
@@ -246,6 +248,8 @@ describe('createDaemonTransport', () => {
         id: 'daemon-opened',
         title: 'Daemon wins',
         projectWorkspacePath: '/tmp/daemon-workspace',
+        parentSessionId: 'parent-session',
+        derivationType: 'subagent',
         status: 'active',
         transport: 'daemon',
       }),
@@ -735,6 +739,70 @@ describe('createDaemonTransport', () => {
     })
 
     await expect(result).resolves.toEqual({ success: true })
+    await transport.stop()
+  })
+
+  it('reads daemon default settings through the connected daemon RPC', async () => {
+    const sockets: MockWebSocket[] = []
+    const daemonMethod = protocol.daemon.DaemonDroidMethod
+    const settingsMethod = protocol.daemon.DaemonSettingsMethod
+    const transport = createDaemonTransport({
+      authProvider: {
+        getApiKey: () => 'defaults-key',
+      },
+      createWebSocket: (url) => {
+        const socket = new MockWebSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+      resolveCandidatePorts: async () => [37643],
+      reconnectBaseDelayMs: 1_000,
+      refreshIntervalMs: 60_000,
+    })
+
+    transport.start()
+    await flushMicrotasks()
+
+    sockets[0]?.open()
+    await flushMicrotasks()
+    const socket = getRequiredValue(sockets[0], 'Expected daemon socket')
+
+    socket.respond(getLastRequestId(socket), { userId: 'user-1', orgId: 'org-1' })
+    await flushMicrotasks()
+    socket.respond(getLastRequestId(socket), {
+      supportedMethods: [
+        daemonMethod.LIST_OPENED_SESSIONS,
+        daemonMethod.LIST_AVAILABLE_SESSIONS,
+        settingsMethod.GET_DEFAULT_SETTINGS,
+      ],
+      supportedNotifications: [],
+      sessions: [],
+    })
+    await flushMicrotasks()
+    socket.respond(getLastRequestId(socket), {
+      sessions: [],
+      hasMore: false,
+    })
+    await flushMicrotasks()
+
+    const defaults = transport.getDefaultSettings()
+
+    expect(JSON.parse(socket.sentPayloads.at(-1) ?? '{}')).toMatchObject({
+      method: settingsMethod.GET_DEFAULT_SETTINGS,
+      params: {},
+    })
+
+    socket.respond(getLastRequestId(socket), {
+      modelId: 'gpt-5.4',
+      interactionMode: 'auto',
+      compactionTokenLimit: 300000,
+    })
+
+    await expect(defaults).resolves.toEqual({
+      modelId: 'gpt-5.4',
+      interactionMode: 'auto',
+      compactionTokenLimit: 300000,
+    })
     await transport.stop()
   })
 

@@ -14,6 +14,7 @@ export interface FactoryDefaults {
   model?: string
   interactionMode?: string
   reasoningEffort?: string
+  autonomyLevel?: string
   [key: string]: unknown
 }
 
@@ -77,7 +78,7 @@ export function deriveDefaultComposerPreferences(
       firstNonEmptyString(factoryDefaultSettings.reasoningEffort),
       factoryModels,
     ),
-    autonomyLevel: 'medium',
+    autonomyLevel: firstNonEmptyString(factoryDefaultSettings.autonomyLevel, 'medium'),
   }
 }
 

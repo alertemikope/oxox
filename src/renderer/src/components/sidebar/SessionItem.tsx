@@ -75,12 +75,14 @@ export const SessionItem = memo(function SessionItem({
   const sessionId = useValue(session$.id)
   const title = useValue(session$.title)
   const status = useValue(session$.status)
+  const parentSessionId = useValue(session$.parentSessionId)
   const derivationType = useValue(session$.derivationType)
   const lastActivityAt = useValue(session$.lastActivityAt)
   const updatedAt = useValue(session$.updatedAt)
   const now = useValue(now$)
-  const isChild = derivationType === 'subagent'
-  const effectiveStatus = isChild ? 'idle' : status
+  const isDerivedChild = Boolean(parentSessionId)
+  const isSubagent = derivationType === 'subagent'
+  const effectiveStatus = isSubagent ? 'idle' : status
   const statusDot = STATUS_DOT[effectiveStatus] ?? ''
 
   return (
@@ -91,7 +93,7 @@ export const SessionItem = memo(function SessionItem({
     >
       <button
         ref={(element) => setSessionRef(focusKey, element)}
-        className={`flex min-w-0 flex-1 items-center gap-2 py-2 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-fd-canvas ${isChild ? 'pl-7 pr-1' : 'pl-2.5 pr-1'}`}
+        className={`flex min-w-0 flex-1 items-center gap-2 py-2 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-fd-canvas ${isDerivedChild ? 'pl-7 pr-1' : 'pl-2.5 pr-1'}`}
         type="button"
         title={title}
         tabIndex={isFocused ? 0 : -1}

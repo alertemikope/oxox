@@ -11,6 +11,7 @@ import type {
   LiveSessionBugReportResult,
   LiveSessionCompactResult,
   LiveSessionContextStatsInfo,
+  LiveSessionCreateRequest,
   LiveSessionEventRecord,
   LiveSessionExecuteRewindParams,
   LiveSessionExecuteRewindResult,
@@ -62,7 +63,10 @@ import { loadSessionTranscriptFromFile } from './transcripts/service'
 
 export interface FoundationService {
   close: () => void
-  createSession: (cwd: string, viewerId?: string) => Promise<LiveSessionSnapshot>
+  createSession: (
+    request: LiveSessionCreateRequest,
+    viewerId?: string,
+  ) => Promise<LiveSessionSnapshot>
   getSessionSnapshot: (sessionId: string) => LiveSessionSnapshot | null
   listLiveSessionSnapshots: () => LiveSessionSnapshot[]
   listLiveSessionNotificationSummaries: () => LiveSessionNotificationSummary[]
@@ -199,9 +203,11 @@ export function createFoundationService(options: CreateDatabaseServiceOptions): 
   }
   const database = createDatabaseService(options)
   const droidCliStatus = resolveDroidCliStatus()
+  let readDaemonDefaultSettings = async (): Promise<unknown> => null
   const foundationBootstrapState = createFoundationBootstrapState({
     droidPath: droidCliStatus.path ?? undefined,
     onChange: emitFoundationChanged,
+    readDaemonDefaultSettings: () => readDaemonDefaultSettings(),
   })
   const scanner = createBackgroundArtifactScanner({
     userDataPath: options.userDataPath,
@@ -211,10 +217,18 @@ export function createFoundationService(options: CreateDatabaseServiceOptions): 
   const daemonAuthProvider = createEnvironmentDaemonAuthProvider()
   const daemonTransport = createDaemonTransport({
     authProvider: daemonAuthProvider,
-    onStateChange: () => {
+    onStateChange: (snapshot) => {
       emitFoundationChanged()
+
+      if (snapshot.status === 'connected') {
+        void foundationBootstrapState.refreshFromDaemonDefaults()
+        return
+      }
+
+      foundationBootstrapState.clearDaemonDefaultSettings()
     },
   })
+  readDaemonDefaultSettings = () => daemonTransport.getDefaultSettings()
   const sessionProcessManager = createSessionProcessManager({
     database,
     droidPath: droidCliStatus.path ?? undefined,

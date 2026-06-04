@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createFoundationBootstrapState,
+  parseDaemonDefaultSettingsBootstrap,
   parseDroidExecHelpBootstrap,
   readFactorySettingsBootstrap,
   readFoundationBootstrap,
@@ -172,6 +173,79 @@ Model details:
       ],
       factoryDefaultSettings: {
         model: 'claude-opus-4-6',
+      },
+    })
+  })
+
+  it('maps daemon default-settings results into factory bootstrap defaults', () => {
+    expect(
+      parseDaemonDefaultSettingsBootstrap({
+        modelId: 'claude-opus-4-6',
+        interactionMode: 'spec',
+        autonomyLevel: 'high',
+        reasoningEffort: 'medium',
+        specModeModelId: 'claude-sonnet-4-6',
+        specModeReasoningEffort: 'high',
+        compactionTokenLimit: 300000,
+        compactionTokenLimitPerModel: {
+          'claude-opus-4-6': 250000,
+        },
+        compactionModel: 'current-model',
+        compactionThresholdCheckEnabled: true,
+        runInWorktree: true,
+        worktreeDirectory: '/Users/test/worktrees',
+        subagentModelSettings: {
+          lightModel: 'claude-haiku-4-6',
+        },
+        missionSettings: {
+          workerModel: 'claude-sonnet-4-6',
+        },
+        missionOrchestratorModel: 'claude-opus-4-6',
+        missionOrchestratorReasoningEffort: 'max',
+        availableModels: [
+          {
+            id: 'claude-opus-4-6',
+            displayName: 'Claude Opus 4.6',
+            shortDisplayName: 'Opus',
+            modelProvider: 'anthropic',
+            supportedReasoningEfforts: ['low', 'medium', 'high'],
+            defaultReasoningEffort: 'medium',
+          },
+        ],
+      }),
+    ).toEqual({
+      factoryModels: [
+        {
+          id: 'claude-opus-4-6',
+          name: 'Claude Opus 4.6',
+          provider: 'anthropic',
+          supportedReasoningEfforts: ['low', 'medium', 'high'],
+          defaultReasoningEffort: 'medium',
+        },
+      ],
+      factoryDefaultSettings: {
+        model: 'claude-opus-4-6',
+        interactionMode: 'spec',
+        autonomyLevel: 'high',
+        reasoningEffort: 'medium',
+        specModeModelId: 'claude-sonnet-4-6',
+        specModeReasoningEffort: 'high',
+        compactionTokenLimit: 300000,
+        compactionTokenLimitPerModel: {
+          'claude-opus-4-6': 250000,
+        },
+        compactionModel: 'current-model',
+        compactionThresholdCheckEnabled: true,
+        runInWorktree: true,
+        worktreeDirectory: '/Users/test/worktrees',
+        subagentModelSettings: {
+          lightModel: 'claude-haiku-4-6',
+        },
+        missionSettings: {
+          workerModel: 'claude-sonnet-4-6',
+        },
+        missionOrchestratorModel: 'claude-opus-4-6',
+        missionOrchestratorReasoningEffort: 'max',
       },
     })
   })
@@ -443,5 +517,122 @@ Model details:
       },
     })
     expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('prefers daemon default settings over CLI/settings bootstrap and can fall back to local discovery', async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), 'oxox-bootstrap-'))
+    const settingsPath = join(tempDirectory, 'settings.json')
+    cleanupPaths.push(tempDirectory)
+
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        customModels: [{ id: 'settings-model', displayName: 'Settings Model' }],
+        sessionDefaultSettings: {
+          model: 'settings-model',
+          interactionMode: 'auto',
+        },
+      }),
+    )
+
+    const onChange = vi.fn()
+    const bootstrapState = createFoundationBootstrapState({
+      settingsPath,
+      droidPath: '/Users/test/.local/bin/droid',
+      onChange,
+      readDroidExecHelp: vi.fn().mockResolvedValue(`
+Usage: droid exec [options] [prompt]
+
+Available Models:
+  cli-model                               CLI Model (default)
+
+Model details:
+`),
+      readDaemonDefaultSettings: vi.fn().mockResolvedValue({
+        modelId: 'daemon-model',
+        interactionMode: 'spec',
+        reasoningEffort: 'high',
+        availableModels: [
+          {
+            id: 'daemon-model',
+            displayName: 'Daemon Model',
+            shortDisplayName: 'Daemon',
+            modelProvider: 'openai',
+            supportedReasoningEfforts: ['medium', 'high'],
+            defaultReasoningEffort: 'medium',
+          },
+        ],
+      }),
+    })
+
+    await bootstrapState.refreshFromDroidCli()
+
+    expect(bootstrapState.getSnapshot()).toEqual({
+      factoryModels: [{ id: 'cli-model', name: 'CLI Model' }],
+      factoryDefaultSettings: {
+        model: 'cli-model',
+      },
+    })
+
+    await bootstrapState.refreshFromDaemonDefaults()
+
+    expect(bootstrapState.getSnapshot()).toEqual({
+      factoryModels: [
+        {
+          id: 'daemon-model',
+          name: 'Daemon Model',
+          provider: 'openai',
+          supportedReasoningEfforts: ['medium', 'high'],
+          defaultReasoningEffort: 'medium',
+        },
+      ],
+      factoryDefaultSettings: {
+        model: 'daemon-model',
+        interactionMode: 'spec',
+        reasoningEffort: 'high',
+      },
+    })
+
+    bootstrapState.clearDaemonDefaultSettings()
+
+    expect(bootstrapState.getSnapshot()).toEqual({
+      factoryModels: [{ id: 'cli-model', name: 'CLI Model' }],
+      factoryDefaultSettings: {
+        model: 'cli-model',
+      },
+    })
+    expect(onChange).toHaveBeenCalledTimes(3)
+  })
+
+  it('notifies when expanded daemon defaults change', async () => {
+    const onChange = vi.fn()
+    const readDaemonDefaultSettings = vi
+      .fn()
+      .mockResolvedValueOnce({
+        modelId: 'daemon-model',
+        compactionModel: 'current-model',
+        runInWorktree: false,
+      })
+      .mockResolvedValueOnce({
+        modelId: 'daemon-model',
+        compactionModel: 'claude-opus-4-6',
+        runInWorktree: true,
+      })
+    const bootstrapState = createFoundationBootstrapState({
+      settingsPath: '/tmp/missing-settings.json',
+      droidPath: '/Users/test/.local/bin/droid',
+      onChange,
+      readDaemonDefaultSettings,
+    })
+
+    await bootstrapState.refreshFromDaemonDefaults()
+    await bootstrapState.refreshFromDaemonDefaults()
+
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect(bootstrapState.getSnapshot().factoryDefaultSettings).toEqual({
+      model: 'daemon-model',
+      compactionModel: 'claude-opus-4-6',
+      runInWorktree: true,
+    })
   })
 })

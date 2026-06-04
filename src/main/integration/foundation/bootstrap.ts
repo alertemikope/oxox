@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+import { protocol } from '@factory/droid-sdk'
+
 import type { FoundationBootstrap, LiveSessionModel } from '../../../shared/ipc/contracts'
 
 const EMPTY_FACTORY_SETTINGS_BOOTSTRAP: Pick<
@@ -39,11 +41,14 @@ export interface CreateFoundationBootstrapStateOptions {
   droidPath?: string
   onChange?: () => void
   readDroidExecHelp?: (binaryPath: string) => Promise<string | null>
+  readDaemonDefaultSettings?: () => Promise<unknown>
 }
 
 export interface FoundationBootstrapState {
   getSnapshot: () => Pick<FoundationBootstrap, 'factoryModels' | 'factoryDefaultSettings'>
   refreshFromDroidCli: () => Promise<void>
+  refreshFromDaemonDefaults: () => Promise<void>
+  clearDaemonDefaultSettings: () => void
 }
 
 export function readFoundationBootstrap(
@@ -69,11 +74,17 @@ export function createFoundationBootstrapState({
   droidPath,
   onChange,
   readDroidExecHelp = readDroidExecHelpAsync,
+  readDaemonDefaultSettings,
 }: CreateFoundationBootstrapStateOptions): FoundationBootstrapState {
-  let snapshot = readFactorySettingsBootstrap(settingsPath)
+  let fallbackSnapshot = readFactorySettingsBootstrap(settingsPath)
+  let daemonSnapshot: Pick<FoundationBootstrap, 'factoryModels' | 'factoryDefaultSettings'> | null =
+    null
+
+  const getSnapshot = (): Pick<FoundationBootstrap, 'factoryModels' | 'factoryDefaultSettings'> =>
+    daemonSnapshot ?? fallbackSnapshot
 
   return {
-    getSnapshot: () => snapshot,
+    getSnapshot,
     refreshFromDroidCli: async () => {
       if (!droidPath) {
         return
@@ -91,14 +102,55 @@ export function createFoundationBootstrapState({
           parseDroidExecHelpBootstrap(helpText),
         )
 
-        if (!bootstrapChanged(snapshot, nextSnapshot)) {
+        if (!bootstrapChanged(fallbackSnapshot, nextSnapshot)) {
           return
         }
 
-        snapshot = nextSnapshot
-        onChange?.()
+        const previousSnapshot = getSnapshot()
+        fallbackSnapshot = nextSnapshot
+
+        if (!daemonSnapshot && bootstrapChanged(previousSnapshot, getSnapshot())) {
+          onChange?.()
+        }
       } catch {
         return
+      }
+    },
+    refreshFromDaemonDefaults: async () => {
+      if (!readDaemonDefaultSettings) {
+        return
+      }
+
+      try {
+        const nextSnapshot = parseDaemonDefaultSettingsBootstrap(
+          await readDaemonDefaultSettings(),
+          fallbackSnapshot,
+        )
+
+        if (daemonSnapshot && !bootstrapChanged(daemonSnapshot, nextSnapshot)) {
+          return
+        }
+
+        const previousSnapshot = getSnapshot()
+        daemonSnapshot = nextSnapshot
+
+        if (bootstrapChanged(previousSnapshot, getSnapshot())) {
+          onChange?.()
+        }
+      } catch {
+        return
+      }
+    },
+    clearDaemonDefaultSettings: () => {
+      if (!daemonSnapshot) {
+        return
+      }
+
+      const previousSnapshot = getSnapshot()
+      daemonSnapshot = null
+
+      if (bootstrapChanged(previousSnapshot, getSnapshot())) {
+        onChange?.()
       }
     },
   }
@@ -393,6 +445,74 @@ function parseFactoryDefaultSettings(
   }
 }
 
+export function parseDaemonDefaultSettingsBootstrap(
+  value: unknown,
+  fallbackBootstrap: Pick<
+    FoundationBootstrap,
+    'factoryModels' | 'factoryDefaultSettings'
+  > = EMPTY_FACTORY_SETTINGS_BOOTSTRAP,
+): Pick<FoundationBootstrap, 'factoryModels' | 'factoryDefaultSettings'> {
+  const parsed = protocol.daemon.DaemonGetDefaultSettingsResultSchema.parse(value)
+  const rawCompactionThresholdCheckEnabled = isRecord(value)
+    ? value.compactionThresholdCheckEnabled
+    : undefined
+  const daemonModels =
+    parsed.availableModels?.map((model) => ({
+      id: model.id,
+      name: model.displayName,
+      provider: model.modelProvider,
+      ...(model.supportedReasoningEfforts.length > 0
+        ? { supportedReasoningEfforts: [...model.supportedReasoningEfforts] }
+        : {}),
+      ...(model.defaultReasoningEffort
+        ? { defaultReasoningEffort: model.defaultReasoningEffort }
+        : {}),
+    })) ?? []
+  const models =
+    daemonModels.length > 0
+      ? mergeModelMetadata(daemonModels, fallbackBootstrap.factoryModels)
+      : fallbackBootstrap.factoryModels
+
+  return {
+    factoryModels: models,
+    factoryDefaultSettings: {
+      ...(parsed.modelId ? { model: parsed.modelId } : {}),
+      ...(parsed.interactionMode ? { interactionMode: parsed.interactionMode } : {}),
+      ...(parsed.autonomyMode ? { autonomyMode: parsed.autonomyMode } : {}),
+      ...(parsed.autonomyLevel ? { autonomyLevel: parsed.autonomyLevel } : {}),
+      ...(parsed.reasoningEffort ? { reasoningEffort: parsed.reasoningEffort } : {}),
+      ...(parsed.specModeModelId ? { specModeModelId: parsed.specModeModelId } : {}),
+      ...(parsed.specModeReasoningEffort
+        ? { specModeReasoningEffort: parsed.specModeReasoningEffort }
+        : {}),
+      ...(typeof parsed.compactionTokenLimit === 'number'
+        ? { compactionTokenLimit: parsed.compactionTokenLimit }
+        : {}),
+      ...(parsed.compactionTokenLimitPerModel
+        ? { compactionTokenLimitPerModel: { ...parsed.compactionTokenLimitPerModel } }
+        : {}),
+      ...(typeof parsed.compactionModel !== 'undefined'
+        ? { compactionModel: parsed.compactionModel }
+        : {}),
+      ...(typeof rawCompactionThresholdCheckEnabled === 'boolean'
+        ? { compactionThresholdCheckEnabled: rawCompactionThresholdCheckEnabled }
+        : {}),
+      ...(typeof parsed.runInWorktree === 'boolean' ? { runInWorktree: parsed.runInWorktree } : {}),
+      ...(parsed.worktreeDirectory ? { worktreeDirectory: parsed.worktreeDirectory } : {}),
+      ...(parsed.subagentModelSettings
+        ? { subagentModelSettings: parsed.subagentModelSettings }
+        : {}),
+      ...(parsed.missionSettings ? { missionSettings: parsed.missionSettings } : {}),
+      ...(parsed.missionOrchestratorModel
+        ? { missionOrchestratorModel: parsed.missionOrchestratorModel }
+        : {}),
+      ...(parsed.missionOrchestratorReasoningEffort
+        ? { missionOrchestratorReasoningEffort: parsed.missionOrchestratorReasoningEffort }
+        : {}),
+    },
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
@@ -482,27 +602,31 @@ function mergeSettingsBootstrapIntoCliBootstrap(
   }
 }
 
+function mergeModelMetadata(
+  primaryModels: LiveSessionModel[],
+  fallbackModels: LiveSessionModel[],
+): LiveSessionModel[] {
+  const fallbackModelsById = new Map(fallbackModels.map((model) => [model.id, model] as const))
+
+  return primaryModels.map((model) => {
+    const fallbackModel = fallbackModelsById.get(model.id)
+
+    return {
+      ...model,
+      ...(typeof fallbackModel?.maxContextLimit === 'number'
+        ? { maxContextLimit: fallbackModel.maxContextLimit }
+        : {}),
+    }
+  })
+}
+
 function bootstrapChanged(
   previous: Pick<FoundationBootstrap, 'factoryModels' | 'factoryDefaultSettings'>,
   next: Pick<FoundationBootstrap, 'factoryModels' | 'factoryDefaultSettings'>,
 ): boolean {
   return (
-    previous.factoryDefaultSettings.model !== next.factoryDefaultSettings.model ||
-    previous.factoryDefaultSettings.interactionMode !==
-      next.factoryDefaultSettings.interactionMode ||
-    previous.factoryDefaultSettings.reasoningEffort !==
-      next.factoryDefaultSettings.reasoningEffort ||
-    previous.factoryDefaultSettings.autonomyMode !== next.factoryDefaultSettings.autonomyMode ||
-    previous.factoryDefaultSettings.specModeModelId !==
-      next.factoryDefaultSettings.specModeModelId ||
-    previous.factoryDefaultSettings.specModeReasoningEffort !==
-      next.factoryDefaultSettings.specModeReasoningEffort ||
-    JSON.stringify(previous.factoryDefaultSettings.enabledToolIds ?? []) !==
-      JSON.stringify(next.factoryDefaultSettings.enabledToolIds ?? []) ||
-    JSON.stringify(previous.factoryDefaultSettings.disabledToolIds ?? []) !==
-      JSON.stringify(next.factoryDefaultSettings.disabledToolIds ?? []) ||
-    previous.factoryDefaultSettings.compactionTokenLimit !==
-      next.factoryDefaultSettings.compactionTokenLimit ||
+    JSON.stringify(previous.factoryDefaultSettings) !==
+      JSON.stringify(next.factoryDefaultSettings) ||
     JSON.stringify(previous.factoryModels) !== JSON.stringify(next.factoryModels)
   )
 }

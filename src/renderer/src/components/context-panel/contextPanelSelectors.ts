@@ -1,5 +1,6 @@
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
 
+import type { FoundationBootstrap } from '../../../../shared/ipc/contracts'
 import type { UIStore } from '../../state/ui/ui.model'
 import type { ContextPanelProps } from './ContextPanel'
 
@@ -14,6 +15,7 @@ export function buildContextPanelProps({
   uiStore,
 }: {
   foundationStore: {
+    factoryDefaultSettings: FoundationBootstrap['factoryDefaultSettings']
     hasError: boolean
     isLoading: boolean
     refresh: () => Promise<void> | void
@@ -40,6 +42,7 @@ export function buildContextPanelProps({
         }
       : undefined,
     isLoading: foundationStore.isLoading,
+    factoryDefaultSettings: foundationStore.factoryDefaultSettings,
     liveSession: liveSessionStore.selectedSnapshot,
     onBrowseSessions,
     onResizeStart,

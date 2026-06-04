@@ -35,7 +35,12 @@ export function createFoundationSessionCatalog(
   const applySyncReport = (report: ArtifactScannerReport): void => {
     artifactSessions = options.database.listPersistedSessions()
 
-    if (!report || report.processedCount > 0 || report.deletedCount > 0) {
+    if (
+      !report ||
+      report.processedCount > 0 ||
+      report.deletedCount > 0 ||
+      (report.lineageBackfilledCount ?? 0) > 0
+    ) {
       options.onChange?.()
     }
   }

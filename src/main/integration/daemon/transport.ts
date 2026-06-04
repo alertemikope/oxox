@@ -29,7 +29,11 @@ const DEFAULT_RECONNECT_MAX_DELAY_MS = 30_000
 const JSON_RPC_VERSION = '2.0'
 const FACTORY_API_VERSION = '1.0.0'
 const DAEMON_METHOD = protocol.daemon.DaemonDroidMethod
-const KNOWN_DAEMON_METHODS = new Set<string>(Object.values(DAEMON_METHOD))
+const DAEMON_SETTINGS_METHOD = protocol.daemon.DaemonSettingsMethod
+const KNOWN_DAEMON_METHODS = new Set<string>([
+  ...Object.values(DAEMON_METHOD),
+  ...Object.values(DAEMON_SETTINGS_METHOD),
+])
 const AVAILABLE_SESSION_PAGE_SIZE = 100
 
 type DaemonGetSessionMessagesParams = ReturnType<
@@ -61,6 +65,9 @@ type DaemonSearchFilesParams = ReturnType<
 >
 type DaemonSearchFilesResult = ReturnType<
   (typeof protocol.daemon.DaemonSearchFilesResultSchema)['parse']
+>
+type DaemonGetDefaultSettingsResult = ReturnType<
+  (typeof protocol.daemon.DaemonGetDefaultSettingsResultSchema)['parse']
 >
 
 type SchemaParser<TResult> = {
@@ -188,6 +195,7 @@ export interface DaemonTransport {
   unarchiveSession: (sessionId: string) => Promise<DaemonUnarchiveSessionResult>
   listFiles: (params: DaemonListFilesParams) => Promise<DaemonListFilesResult>
   searchFiles: (params: DaemonSearchFilesParams) => Promise<DaemonSearchFilesResult>
+  getDefaultSettings: () => Promise<DaemonGetDefaultSettingsResult>
   forkSession: (sessionId: string) => Promise<{ newSessionId: string }>
   renameSession: (sessionId: string, title: string) => Promise<{ success: true }>
 }
@@ -254,6 +262,10 @@ function mapAvailableStateToStatus(session: DaemonAvailableSession): string {
   return session.archivedAt ? 'completed' : 'idle'
 }
 
+function mapDaemonLineageType(session: { callingSessionId?: string }): string | null {
+  return session.callingSessionId ? 'subagent' : null
+}
+
 function normalizeDaemonSessions(
   openedSessions: DaemonOpenedSession[],
   availableSessions: DaemonAvailableSession[],
@@ -269,7 +281,7 @@ function normalizeDaemonSessions(
       projectWorkspacePath: session.repoRoot ?? session.cwd ?? null,
       projectDisplayName: null,
       parentSessionId: session.callingSessionId ?? null,
-      derivationType: null,
+      derivationType: mapDaemonLineageType(session),
       messageCount: session.messagesCount,
       title: session.title ?? 'Daemon session',
       status: mapAvailableStateToStatus(session),
@@ -291,7 +303,7 @@ function normalizeDaemonSessions(
         session.repoRoot ?? session.cwd ?? existing?.projectWorkspacePath ?? null,
       projectDisplayName: null,
       parentSessionId: session.callingSessionId ?? existing?.parentSessionId ?? null,
-      derivationType: null,
+      derivationType: mapDaemonLineageType(session) ?? existing?.derivationType ?? null,
       messageCount: session.messagesCount ?? existing?.messageCount,
       title: session.title ?? existing?.title ?? 'Daemon session',
       status: mapWorkingStateToStatus(session.workingState),
@@ -626,6 +638,15 @@ class ManagedDaemonTransport implements DaemonTransport {
       protocol.daemon.DaemonSearchFilesRequestParamsSchema,
       protocol.daemon.DaemonSearchFilesResultSchema,
       params,
+    )
+  }
+
+  async getDefaultSettings(): Promise<DaemonGetDefaultSettingsResult> {
+    return this.requestSupportedDaemonMethod(
+      DAEMON_SETTINGS_METHOD.GET_DEFAULT_SETTINGS,
+      protocol.daemon.DaemonGetDefaultSettingsRequestParamsSchema,
+      protocol.daemon.DaemonGetDefaultSettingsResultSchema,
+      {},
     )
   }
 

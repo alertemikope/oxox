@@ -36,6 +36,7 @@ import {
   resolveDaemonCredentials,
 } from '../daemon/auth'
 import type {
+  InitializeSessionRequest,
   LiveSessionCompactResult,
   LiveSessionExecuteRewindParams,
   LiveSessionExecuteRewindResult,
@@ -443,12 +444,14 @@ export class DroidSdkDaemonSessionTransport implements StreamJsonRpcProcessTrans
 
   async initializeSession(
     _requestId: RequestId,
-    cwd: string,
+    request: string | InitializeSessionRequest,
   ): Promise<StreamJsonRpcInitializeResult> {
     const client = await this.client
+    const initRequest = normalizeInitializeSessionRequest(request)
     const result = await client.initializeSession({
       machineId: 'oxox-electron',
-      cwd,
+      cwd: initRequest.cwd,
+      ...initRequest.settings,
       tags: [SDK_TAG],
     })
 
@@ -1255,4 +1258,10 @@ function extractAskUserQuestions(value: unknown): LiveSessionAskUserQuestionReco
       },
     ]
   })
+}
+
+function normalizeInitializeSessionRequest(
+  request: string | InitializeSessionRequest,
+): InitializeSessionRequest {
+  return typeof request === 'string' ? { cwd: request } : request
 }

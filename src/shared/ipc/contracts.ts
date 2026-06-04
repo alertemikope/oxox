@@ -1,4 +1,10 @@
 import type {
+  InitializeSessionRequestParams as DroidSdkInitializeSessionRequestParams,
+  SessionSource as DroidSdkSessionSource,
+  SessionTag as DroidSdkSessionTag,
+  UpdateSessionSettingsRequestParams as DroidSdkUpdateSessionSettingsRequestParams,
+} from '@factory/droid-sdk'
+import type {
   PluginCapabilityInvokeResult,
   PluginCapabilityRecord,
   PluginHostSnapshot,
@@ -384,11 +390,22 @@ export interface FoundationBootstrap {
     interactionMode?: string
     reasoningEffort?: string
     autonomyMode?: string
+    autonomyLevel?: string
     specModeModelId?: string
     specModeReasoningEffort?: string
     enabledToolIds?: string[]
     disabledToolIds?: string[]
     compactionTokenLimit?: number
+    compactionTokenLimitPerModel?: Record<string, number>
+    compactionModel?: unknown
+    compactionThresholdCheckEnabled?: boolean
+    runInWorktree?: boolean
+    worktreeDirectory?: string
+    subagentModelSettings?: unknown
+    missionSettings?: unknown
+    missionModelSettings?: unknown
+    missionOrchestratorModel?: string
+    missionOrchestratorReasoningEffort?: string
   }
 }
 
@@ -509,7 +526,13 @@ export interface LiveSessionModel {
   maxContextLimit?: number | null
 }
 
-export interface LiveSessionSettings {
+type DroidSdkSessionSettingsKey = keyof DroidSdkUpdateSessionSettingsRequestParams
+type DroidSdkInitializeSessionSettingsKey = Exclude<
+  keyof DroidSdkInitializeSessionRequestParams,
+  'cwd' | 'machineId' | 'mcpOAuthCallbackUri' | 'sessionId' | 'workspaceId'
+>
+
+export type LiveSessionSettings = Partial<Record<DroidSdkSessionSettingsKey, unknown>> & {
   modelId?: string
   interactionMode?: string
   reasoningEffort?: string
@@ -519,6 +542,27 @@ export interface LiveSessionSettings {
   specModeReasoningEffort?: string
   enabledToolIds?: string[]
   disabledToolIds?: string[]
+}
+
+export type LiveSessionCreateSettings = Partial<
+  Record<DroidSdkInitializeSessionSettingsKey, unknown>
+> & {
+  modelId?: string
+  interactionMode?: string
+  reasoningEffort?: string
+  autonomyLevel?: string
+  autonomyMode?: string
+  specModeModelId?: string
+  specModeReasoningEffort?: string
+  enabledToolIds?: string[]
+  disabledToolIds?: string[]
+  sessionSource?: DroidSdkSessionSource
+  tags?: DroidSdkSessionTag[]
+}
+
+export interface LiveSessionCreateRequest {
+  cwd: string
+  settings?: LiveSessionCreateSettings
 }
 
 export interface LiveSessionMessage {
@@ -839,7 +883,7 @@ export interface OxoxBridge {
     indexingProgress: () => Promise<SessionSearchIndexingProgress>
   }
   session: {
-    create: (cwd: string) => Promise<LiveSessionSnapshot>
+    create: (request: LiveSessionCreateRequest) => Promise<LiveSessionSnapshot>
     getSnapshot: (sessionId: string) => Promise<LiveSessionSnapshot | null>
     attach: (sessionId: string) => Promise<LiveSessionSnapshot>
     detach: (sessionId: string) => Promise<LiveSessionSnapshot>

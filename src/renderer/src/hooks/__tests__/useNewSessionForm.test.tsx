@@ -98,7 +98,15 @@ type NewSessionFormProbeProps = ReturnType<typeof createStores> & {
     selectDirectory?: () => Promise<string | null>
   }
   sessionApi: {
-    create?: (cwd: string) => Promise<LiveSessionSnapshot>
+    create?: (request: {
+      cwd: string
+      settings?: {
+        modelId?: string
+        interactionMode?: string
+        autonomyLevel?: string
+        reasoningEffort?: string
+      }
+    }) => Promise<LiveSessionSnapshot>
     updateSettings?: (
       sessionId: string,
       settings: { modelId?: string; interactionMode?: string; autonomyLevel?: string },
@@ -195,7 +203,7 @@ describe('useNewSessionForm', () => {
     expect(screen.getByTestId('show-form').textContent).toBe('false')
   })
 
-  it('creates a session, selects it, and refreshes the live snapshot', async () => {
+  it('creates a session with selected settings, selects it, and refreshes the live snapshot', async () => {
     const stores = createStores()
     const create = vi.fn().mockResolvedValue(createSnapshot())
     const updateSettings = vi.fn().mockResolvedValue(undefined)
@@ -229,12 +237,15 @@ describe('useNewSessionForm', () => {
       expect(stores.sessionStore.selectedSessionId).toBe('session-live-1')
     })
 
-    expect(create).toHaveBeenCalledWith('/tmp/workspace')
-    expect(updateSettings).toHaveBeenCalledWith('session-live-1', {
-      modelId: 'gpt-5.4',
-      interactionMode: 'auto',
-      autonomyLevel: 'medium',
+    expect(create).toHaveBeenCalledWith({
+      cwd: '/tmp/workspace',
+      settings: {
+        modelId: 'gpt-5.4',
+        interactionMode: 'auto',
+        autonomyLevel: 'medium',
+      },
     })
+    expect(updateSettings).not.toHaveBeenCalled()
     expect(addUserMessage).toHaveBeenCalledWith('session-live-1', 'Reply with HELLO_HOOK')
     expect(getSnapshot).toHaveBeenCalledWith('session-live-1')
     expect(stores.liveSessionStore.selectedSnapshot?.sessionId).toBe('session-live-1')

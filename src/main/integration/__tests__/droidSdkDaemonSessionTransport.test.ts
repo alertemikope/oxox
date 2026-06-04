@@ -171,7 +171,15 @@ describe('DroidSdkDaemonSessionTransport', () => {
       },
     })
 
-    const result = await transport.initializeSession('request-1', '/tmp/project')
+    const result = await transport.initializeSession('request-1', {
+      cwd: '/tmp/project',
+      settings: {
+        autonomyLevel: 'medium',
+        interactionMode: 'auto',
+        modelId: 'gpt-5.4',
+        reasoningEffort: 'high',
+      },
+    })
 
     expect(ensureLocalDaemon).toHaveBeenCalledTimes(1)
     expect(resolveWebSocketUrl).toHaveBeenCalledWith({
@@ -184,6 +192,10 @@ describe('DroidSdkDaemonSessionTransport', () => {
       {
         machineId: 'oxox-electron',
         cwd: '/tmp/project',
+        autonomyLevel: 'medium',
+        interactionMode: 'auto',
+        modelId: 'gpt-5.4',
+        reasoningEffort: 'high',
         tags: [SDK_TAG],
       },
     ])
@@ -227,6 +239,31 @@ describe('DroidSdkDaemonSessionTransport', () => {
         }),
       )
     })
+  })
+
+  it('passes queued user messages through the daemon SDK client seam', async () => {
+    const daemonClient = new FakeDaemonClient()
+    const transport = new DroidSdkDaemonSessionTransport({
+      authProvider: { getApiKey: () => 'factory-key' },
+      createDaemonClient: () => daemonClient,
+      createWebSocketTransport: () => new FakeDaemonWebSocketTransport(),
+      ensureLocalDaemon: async () => ({ port: 37_643 }),
+      resolveWebSocketUrl: () => 'ws://127.0.0.1:37643',
+      authenticateConnection: async () => undefined,
+    })
+
+    await transport.addUserMessage('message-1', {
+      text: 'Continue after this finishes',
+      queuePlacement: 'end_of_turn',
+    })
+
+    expect(daemonClient.addUserMessageCalls).toEqual([
+      {
+        text: 'Continue after this finishes',
+        queuePlacement: 'end_of_turn',
+        messageId: expect.any(String),
+      },
+    ])
   })
 
   it('preserves daemon server request ids for permission resolution', async () => {

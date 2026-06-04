@@ -468,7 +468,15 @@ describe('DroidSdkSessionTransport', () => {
       events.push(event as { type: string })
     })
 
-    const result = await sessionTransport.initializeSession('session:create:1', '/tmp/session-1')
+    const result = await sessionTransport.initializeSession('session:create:1', {
+      cwd: '/tmp/session-1',
+      settings: {
+        autonomyLevel: 'medium',
+        interactionMode: 'auto',
+        modelId: 'gpt-5.4',
+        reasoningEffort: 'high',
+      },
+    })
 
     expect(result).toMatchObject({
       sessionId: 'session-1',
@@ -482,6 +490,10 @@ describe('DroidSdkSessionTransport', () => {
       {
         machineId: 'oxox-electron',
         cwd: '/tmp/session-1',
+        autonomyLevel: 'medium',
+        interactionMode: 'auto',
+        modelId: 'gpt-5.4',
+        reasoningEffort: 'high',
         tags: [SDK_TAG],
       },
     ])
@@ -1131,6 +1143,7 @@ describe('DroidSdkSessionTransport', () => {
 
     await sessionTransport.addUserMessage('message:1', {
       text: 'Summarize this screenshot',
+      queuePlacement: 'end_of_turn',
       images: [
         {
           type: 'base64',
@@ -1162,6 +1175,7 @@ describe('DroidSdkSessionTransport', () => {
       {
         text: 'Summarize this screenshot',
         messageId: expect.any(String),
+        queuePlacement: 'end_of_turn',
         images: [
           {
             type: 'base64',

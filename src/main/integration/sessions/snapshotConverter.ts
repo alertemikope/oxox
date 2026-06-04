@@ -102,12 +102,16 @@ export function normalizeSessionSettings(
 
 export function filterDefinedSettings(settings: Partial<LiveSessionSettings>): LiveSessionSettings {
   return Object.fromEntries(
-    Object.entries(settings).filter((entry) => {
-      if (typeof entry[1] === 'string') {
-        return entry[1].length > 0
+    Object.entries(settings).filter(([, value]) => {
+      if (value === undefined) {
+        return false
       }
 
-      return Array.isArray(entry[1]) && entry[1].every((value) => typeof value === 'string')
+      if (typeof value === 'string') {
+        return value.length > 0
+      }
+
+      return true
     }),
   ) as LiveSessionSettings
 }

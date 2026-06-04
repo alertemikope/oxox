@@ -116,6 +116,57 @@ describe('createFoundationSessionCatalog', () => {
     expect(onChange).toHaveBeenCalledTimes(1)
   })
 
+  it('emits a change event when artifact sync only backfills session lineage', () => {
+    let scheduledSync: (() => void) | undefined
+    const scanner = {
+      sync: vi
+        .fn()
+        .mockReturnValueOnce({
+          processedCount: 1,
+          skippedCount: 0,
+          deletedCount: 0,
+          unreadableCount: 0,
+          lineageBackfilledCount: 0,
+          durationMs: 1,
+        })
+        .mockReturnValueOnce({
+          processedCount: 0,
+          skippedCount: 1,
+          deletedCount: 0,
+          unreadableCount: 0,
+          lineageBackfilledCount: 1,
+          durationMs: 1,
+        }),
+    }
+    const database = {
+      listPersistedSessions: vi.fn(() => []),
+      listSessions: vi.fn(() => []),
+    }
+    const daemonTransport = {
+      listSessions: vi.fn(() => []),
+    }
+    const setIntervalFn = vi.fn((callback: () => void) => {
+      scheduledSync = callback
+      return {} as ReturnType<typeof setInterval>
+    })
+    const onChange = vi.fn()
+
+    createFoundationSessionCatalog({
+      database,
+      scanner,
+      daemonTransport,
+      onChange,
+      setIntervalFn,
+      clearIntervalFn: vi.fn(),
+    })
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+
+    scheduledSync?.()
+
+    expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
   it('awaits artifact refresh so callers can verify persisted session state', async () => {
     const scanner = {
       sync: vi.fn().mockResolvedValue({

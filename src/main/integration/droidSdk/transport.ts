@@ -26,6 +26,7 @@ import type {
 } from '../../../shared/ipc/contracts'
 
 import type {
+  InitializeSessionRequest,
   LiveSessionCompactResult,
   LiveSessionExecuteRewindParams,
   LiveSessionExecuteRewindResult,
@@ -220,13 +221,15 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
 
   async initializeSession(
     _requestId: RequestId,
-    cwd: string,
+    request: string | InitializeSessionRequest,
   ): Promise<StreamJsonRpcInitializeResult> {
     await this.ready
+    const initRequest = normalizeInitializeSessionRequest(request)
 
     const result = await this.client.initializeSession({
       machineId: 'oxox-electron',
-      cwd,
+      cwd: initRequest.cwd,
+      ...initRequest.settings,
       tags: [SDK_TAG],
     })
 
@@ -838,4 +841,10 @@ function extractAskUserQuestions(value: unknown): LiveSessionAskUserQuestionReco
       },
     ]
   })
+}
+
+function normalizeInitializeSessionRequest(
+  request: string | InitializeSessionRequest,
+): InitializeSessionRequest {
+  return typeof request === 'string' ? { cwd: request } : request
 }

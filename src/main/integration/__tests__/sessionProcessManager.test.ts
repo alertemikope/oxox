@@ -394,6 +394,12 @@ describe('createSessionProcessManager', () => {
 
     const snapshot = await manager.createSession({
       cwd: '/tmp/daemon-project',
+      settings: {
+        autonomyLevel: 'high',
+        interactionMode: 'auto',
+        modelId: 'gpt-5.5',
+        reasoningEffort: 'medium',
+      },
       viewerId: 'window-a',
     })
 
@@ -403,6 +409,15 @@ describe('createSessionProcessManager', () => {
       sessionId: null,
     })
     expect(spawnProcess).not.toHaveBeenCalled()
+    expect(transport.initializeSession).toHaveBeenCalledWith('session:create:1', {
+      cwd: '/tmp/daemon-project',
+      settings: {
+        autonomyLevel: 'high',
+        interactionMode: 'auto',
+        modelId: 'gpt-5.5',
+        reasoningEffort: 'medium',
+      },
+    })
     expect(snapshot).toMatchObject({
       sessionId: 'daemon-live-1',
       processId: 0,

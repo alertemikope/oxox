@@ -156,7 +156,8 @@ export function createOxoxBridge(
         ),
     },
     session: {
-      create: (cwd) => invokeTyped<LiveSessionSnapshot>(invoke, IPC_CHANNELS.sessionCreate, cwd),
+      create: (request) =>
+        invokeTyped<LiveSessionSnapshot>(invoke, IPC_CHANNELS.sessionCreate, request),
       getSnapshot: (sessionId) =>
         invokeTyped<LiveSessionSnapshot | null>(invoke, IPC_CHANNELS.sessionGetSnapshot, sessionId),
       attach: (sessionId) =>

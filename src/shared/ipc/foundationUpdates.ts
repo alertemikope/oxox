@@ -312,12 +312,7 @@ function foundationDefaultSettingsEqual(
   left: FoundationBootstrap['factoryDefaultSettings'],
   right: FoundationBootstrap['factoryDefaultSettings'],
 ): boolean {
-  return (
-    left.model === right.model &&
-    left.interactionMode === right.interactionMode &&
-    left.reasoningEffort === right.reasoningEffort &&
-    left.compactionTokenLimit === right.compactionTokenLimit
-  )
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 function stringArraysEqual(left: string[], right: string[]): boolean {

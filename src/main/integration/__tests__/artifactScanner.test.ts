@@ -933,6 +933,78 @@ describe('artifact scanner', () => {
     expect(logger).toHaveBeenCalledTimes(1)
   })
 
+  it('reports lineage-only backfills from unchanged active subagent artifacts', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'oxox-artifacts-'))
+    const sessionsRoot = join(root, 'sessions')
+    const userDataPath = join(root, 'user-data')
+    cleanup.push(() => rmSync(root, { recursive: true, force: true }))
+
+    const artifact = writeSessionArtifact({
+      sessionsRoot,
+      bucket: '-active-subagent',
+      sessionId: '99999999-9999-4999-8999-999999999999',
+      transcriptLines: [
+        JSON.stringify({
+          type: 'session_start',
+          id: '99999999-9999-4999-8999-999999999999',
+          title: 'Active subagent',
+          sessionTitle: 'worker: Active subagent',
+          callingSessionId: '00000000-0000-4000-8000-000000000000',
+          cwd: '/tmp/active-subagent',
+        }),
+      ],
+    })
+    const stat = statSync(artifact.transcriptPath)
+
+    const database = createDatabaseService({
+      userDataPath,
+      databaseFactory: createNodeSqliteDatabaseFactory(),
+    })
+    cleanup.push(() => database.close())
+
+    database.upsertSession({
+      sessionId: '00000000-0000-4000-8000-000000000000',
+      projectWorkspacePath: '/tmp/active-subagent',
+      title: 'Parent session',
+      status: 'active',
+      transport: 'artifacts',
+      createdAt: '2026-04-03T00:59:00.000Z',
+      lastActivityAt: '2026-04-03T00:59:00.000Z',
+      updatedAt: '2026-04-03T00:59:00.000Z',
+    })
+    database.upsertArtifactSession({
+      sessionId: '99999999-9999-4999-8999-999999999999',
+      sourcePath: artifact.transcriptPath,
+      projectWorkspacePath: '/tmp/active-subagent',
+      title: 'Active subagent',
+      status: 'idle',
+      transport: 'artifacts',
+      createdAt: '2026-04-03T01:00:00.000Z',
+      lastActivityAt: '2026-04-03T01:00:00.000Z',
+      updatedAt: '2026-04-03T01:00:00.000Z',
+      lastByteOffset: stat.size,
+      lastMtimeMs: stat.mtimeMs,
+      checksum: `${stat.size}:${Math.floor(stat.mtimeMs)}`,
+    })
+
+    const scanner = createArtifactScanner({
+      database,
+      sessionsRoot,
+    })
+
+    const report = await scanner.sync()
+
+    expect(report).toMatchObject({
+      processedCount: 0,
+      skippedCount: 1,
+      lineageBackfilledCount: 1,
+    })
+    expect(database.getSession('99999999-9999-4999-8999-999999999999')).toMatchObject({
+      parentSessionId: '00000000-0000-4000-8000-000000000000',
+      derivationType: 'subagent',
+    })
+  })
+
   it('removes deleted sessions from SQLite on the next poll cycle', async () => {
     const root = mkdtempSync(join(tmpdir(), 'oxox-artifacts-'))
     const sessionsRoot = join(root, 'sessions')

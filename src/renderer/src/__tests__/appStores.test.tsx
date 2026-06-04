@@ -966,7 +966,14 @@ describe('renderer store providers and sidebar shell', () => {
 
     expect((await screen.findAllByText('Reply with HELLO_LIVE_SESSION')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('/tmp/live-session').length).toBeGreaterThan(0)
-    expect(create).toHaveBeenCalledWith('/tmp/live-session')
+    expect(create).toHaveBeenCalledWith({
+      cwd: '/tmp/live-session',
+      settings: {
+        autonomyLevel: 'medium',
+        interactionMode: 'auto',
+        modelId: 'gpt-5.4',
+      },
+    })
     expect(addUserMessage).toHaveBeenCalledWith('session-live-1', 'Reply with HELLO_LIVE_SESSION')
   })
 

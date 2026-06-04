@@ -128,6 +128,10 @@ describe('ContextPanel', () => {
 
     render(
       <ContextPanel
+        factoryDefaultSettings={{
+          compactionThresholdCheckEnabled: true,
+          compactionTokenLimit: 80_000,
+        }}
         liveSession={{
           id: 'live-session-1',
           title: 'Transcript polish',
@@ -212,7 +216,13 @@ describe('ContextPanel', () => {
     expect(screen.getByText('Tool controls')).toBeTruthy()
     expect(screen.getByText('Context window')).toBeTruthy()
     expect(screen.getByText('12% used')).toBeTruthy()
+    expect(screen.getByText('100,000 token window')).toBeTruthy()
     expect(screen.getByText('87,655 remaining')).toBeTruthy()
+    expect(screen.getByText('Compaction')).toBeTruthy()
+    expect(screen.getByText('Automatic compaction')).toBeTruthy()
+    expect(screen.getByText('Enabled')).toBeTruthy()
+    expect(screen.getByText('80,000 threshold')).toBeTruthy()
+    expect(screen.getByText('67,655 before threshold')).toBeTruthy()
     expect(screen.getByText('Token processing')).toBeTruthy()
     expect(screen.getByText('Cache read')).toBeTruthy()
     expect(screen.getByText('Cache write')).toBeTruthy()
@@ -224,6 +234,49 @@ describe('ContextPanel', () => {
 
     fireEvent.click(screen.getByRole('switch', { name: 'Toggle Read tool' }))
     expect(onToggleTool).toHaveBeenCalledWith('Read', false)
+  })
+
+  it('explains disabled automatic compaction for live sessions', () => {
+    render(
+      <ContextPanel
+        factoryDefaultSettings={{
+          compactionThresholdCheckEnabled: false,
+          compactionTokenLimit: 50_000,
+        }}
+        liveSession={{
+          id: 'live-session-1',
+          title: 'Transcript polish',
+          projectWorkspacePath: '/tmp/project-alpha',
+          status: 'active',
+          settings: { modelId: 'gpt-5.4', interactionMode: 'auto' },
+          availableModels: [{ id: 'gpt-5.4', name: 'GPT 5.4' }],
+          messages: [],
+          events: [],
+        }}
+        onResizeStart={() => undefined}
+        runtimeCatalog={{
+          refreshError: null,
+          tools: [],
+          skills: [],
+          mcpServers: [],
+          contextStats: {
+            used: 12_000,
+            remaining: 88_000,
+            limit: 100_000,
+            accuracy: 'exact',
+            updatedAt: '2026-04-23T21:13:04.000Z',
+          },
+          updatingToolLlmId: null,
+        }}
+        selectedSession={selectedSession}
+        width={320}
+      />,
+    )
+
+    expect(screen.getByText('Automatic compaction')).toBeTruthy()
+    expect(screen.getByText('Disabled')).toBeTruthy()
+    expect(screen.getByText('50,000 threshold')).toBeTruthy()
+    expect(screen.getByText('Threshold checks are disabled for new Droid sessions.')).toBeTruthy()
   })
 
   it('hides over-limit estimated context stats because Droid can overestimate compacted sessions', () => {

@@ -130,8 +130,7 @@ export function useNewSessionForm({
         !cwd ||
         (!initialPrompt && images.length === 0) ||
         !sessionApi.create ||
-        !sessionApi.addUserMessage ||
-        !sessionApi.updateSettings
+        !sessionApi.addUserMessage
       ) {
         return
       }
@@ -140,13 +139,14 @@ export function useNewSessionForm({
       setError(null)
 
       try {
-        const createdSession = await sessionApi.create(cwd)
-
-        await sessionApi.updateSettings(createdSession.sessionId, {
-          modelId: payload.modelId,
-          interactionMode: payload.interactionMode,
-          ...(payload.reasoningEffort ? { reasoningEffort: payload.reasoningEffort } : {}),
-          autonomyLevel: payload.autonomyLevel,
+        const createdSession = await sessionApi.create({
+          cwd,
+          settings: {
+            modelId: payload.modelId,
+            interactionMode: payload.interactionMode,
+            ...(payload.reasoningEffort ? { reasoningEffort: payload.reasoningEffort } : {}),
+            autonomyLevel: payload.autonomyLevel,
+          },
         })
         await sessionApi.addUserMessage(
           createdSession.sessionId,

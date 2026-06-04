@@ -1,6 +1,7 @@
 import type {
   AppUpdateState,
   LiveSessionAddUserMessageRequest,
+  LiveSessionCreateRequest,
   RuntimeInfo,
   TranscriptPerformanceEvent,
 } from '../../shared/ipc/contracts'
@@ -151,9 +152,12 @@ export function registerAppIpcHandlers({
     [IPC_CHANNELS.sessionSearchIndexingProgress]: () => service.getSearchIndexingProgress(),
     [IPC_CHANNELS.transcriptGetSessionTranscript]: (_event, sessionId: string) =>
       service.getSessionTranscript(sessionId),
-    [IPC_CHANNELS.sessionCreate]: async (event: IpcInvokeEventLike, cwd: string) => {
+    [IPC_CHANNELS.sessionCreate]: async (
+      event: IpcInvokeEventLike,
+      request: LiveSessionCreateRequest,
+    ) => {
       ensureSenderCleanup(event.sender)
-      const snapshot = await service.createSession(cwd, `renderer:${event.sender.id}`)
+      const snapshot = await service.createSession(request, `renderer:${event.sender.id}`)
       registerRendererSessionAttachment(event.sender.id, snapshot.sessionId)
       return snapshot
     },

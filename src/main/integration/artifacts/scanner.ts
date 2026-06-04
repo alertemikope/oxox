@@ -45,6 +45,7 @@ type SessionSettings = {
 export interface ArtifactScannerReport {
   deletedCount: number
   durationMs: number
+  lineageBackfilledCount?: number
   processedCount: number
   skippedCount: number
   unreadableCount: number
@@ -454,9 +455,10 @@ function createUnreadableUpsert(
 function backfillSessionLineage(
   options: CreateArtifactScannerOptions,
   files: ArtifactFile[],
-): void {
+): number {
   const existingLineageIds = new Set(options.database.listSessionLineageIds())
   const filesToBackfill = files.filter((file) => !existingLineageIds.has(file.sessionId))
+  let backfilledCount = 0
 
   for (const file of filesToBackfill) {
     try {
@@ -480,11 +482,14 @@ function backfillSessionLineage(
         const timestamp =
           typeof record.timestamp === 'string' ? record.timestamp : new Date().toISOString()
         options.database.linkSessionParent(file.sessionId, resolvedParent, relationship, timestamp)
+        backfilledCount += 1
       }
     } catch {
       // Skip files that can't be read
     }
   }
+
+  return backfilledCount
 }
 
 function readFirstLine(filePath: string): string | null {
@@ -658,7 +663,7 @@ export function createArtifactScanner(options: CreateArtifactScannerOptions): Ar
         processedCount += 1
       }
 
-      backfillSessionLineage(options, currentFiles)
+      const lineageBackfilledCount = backfillSessionLineage(options, currentFiles)
 
       const { missingSessionDeletes, staleMetadataDeletes } = partitionArtifactMetadataDeletes({
         trackedMetadata: options.database.listSyncMetadata(),
@@ -676,6 +681,7 @@ export function createArtifactScanner(options: CreateArtifactScannerOptions): Ar
       return {
         deletedCount: missingSessionDeletes.length,
         durationMs: Date.now() - startedAt,
+        lineageBackfilledCount,
         processedCount,
         skippedCount,
         unreadableCount,

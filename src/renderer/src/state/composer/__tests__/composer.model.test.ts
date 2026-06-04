@@ -336,6 +336,38 @@ describe('ComposerStore', () => {
     expect(composerStore.isInterruptingSelected).toBe(true)
   })
 
+  it('keeps composer preferences as UI hints without mutating canonical foundation defaults', () => {
+    const { composerStore, foundationStore } = createStores({
+      selectedSessionId: 'session-alpha',
+      bootstrap: createBootstrap({
+        factoryModels: [
+          { id: 'daemon-default', name: 'Daemon Default' },
+          { id: 'ui-hint-model', name: 'UI Hint Model' },
+        ],
+        factoryDefaultSettings: {
+          model: 'daemon-default',
+          interactionMode: 'auto',
+          reasoningEffort: 'medium',
+        },
+      }),
+    })
+
+    composerStore.updatePreferences('session-alpha', {
+      modelId: 'ui-hint-model',
+      interactionMode: 'spec',
+      reasoningEffort: 'high',
+    })
+
+    expect(composerStore.selectedPreferences).toMatchObject({
+      modelId: 'ui-hint-model',
+      interactionMode: 'spec',
+    })
+    expect(foundationStore.factoryDefaultSettings).toEqual({
+      model: 'daemon-default',
+      interactionMode: 'auto',
+      reasoningEffort: 'medium',
+    })
+  })
   it('keeps context usage aligned with the live snapshot model until the snapshot updates', () => {
     const { composerStore } = createStores({
       bootstrap: createBootstrap({

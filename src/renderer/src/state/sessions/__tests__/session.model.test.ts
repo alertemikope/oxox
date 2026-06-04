@@ -73,6 +73,61 @@ describe('SessionStore', () => {
     expect(store.selectedSessionId).toBe('session-beta-new')
   })
 
+  it('keeps derived fork and subagent chains under their recorded parents', () => {
+    const store = new SessionStore()
+
+    store.hydrateSessions([
+      {
+        id: 'session-subagent',
+        projectId: 'project-alpha',
+        projectWorkspacePath: '/tmp/project-alpha',
+        projectDisplayName: null,
+        parentSessionId: 'session-fork',
+        derivationType: 'subagent',
+        title: 'Subagent child',
+        status: 'completed',
+        transport: 'artifacts',
+        createdAt: '2026-03-24T10:00:00.000Z',
+        lastActivityAt: '2026-03-24T10:30:00.000Z',
+        updatedAt: '2026-03-24T10:30:00.000Z',
+      },
+      {
+        id: 'session-fork',
+        projectId: 'project-alpha',
+        projectWorkspacePath: '/tmp/project-alpha',
+        projectDisplayName: null,
+        parentSessionId: 'session-root',
+        derivationType: 'fork',
+        title: 'Fork parent',
+        status: 'idle',
+        transport: 'artifacts',
+        createdAt: '2026-03-24T09:00:00.000Z',
+        lastActivityAt: '2026-03-24T09:30:00.000Z',
+        updatedAt: '2026-03-24T09:30:00.000Z',
+      },
+      {
+        id: 'session-root',
+        projectId: 'project-alpha',
+        projectWorkspacePath: '/tmp/project-alpha',
+        projectDisplayName: null,
+        parentSessionId: null,
+        derivationType: null,
+        title: 'Root parent',
+        status: 'idle',
+        transport: 'artifacts',
+        createdAt: '2026-03-24T08:00:00.000Z',
+        lastActivityAt: '2026-03-24T08:30:00.000Z',
+        updatedAt: '2026-03-24T08:30:00.000Z',
+      },
+    ])
+
+    expect(store.projectGroups[0]?.sessions.map((session) => session.id)).toEqual([
+      'session-root',
+      'session-fork',
+      'session-subagent',
+    ])
+  })
+
   it('persists pinned sessions and project display name overrides across restarts', () => {
     const sessions = [
       {
