@@ -1,4 +1,6 @@
 import {
+  type ConnectDaemonOptions,
+  MachineType,
   protocol,
   ensureLocalDaemon as sdkEnsureLocalDaemon,
   resolveWebSocketUrl as sdkResolveWebSocketUrl,
@@ -9,6 +11,7 @@ import WebSocket, { type RawData } from 'ws'
 import type {
   DaemonConnectionSnapshot,
   DaemonConnectionStatus,
+  DaemonConnectionTargetSnapshot,
   SessionRecord,
 } from '../../../shared/ipc/contracts'
 import {
@@ -28,6 +31,62 @@ const FACTORY_API_VERSION = '1.0.0'
 const DAEMON_METHOD = protocol.daemon.DaemonDroidMethod
 const KNOWN_DAEMON_METHODS = new Set<string>(Object.values(DAEMON_METHOD))
 const AVAILABLE_SESSION_PAGE_SIZE = 100
+
+type DaemonGetSessionMessagesParams = ReturnType<
+  (typeof protocol.daemon.DaemonGetSessionMessagesRequestParamsSchema)['parse']
+>
+type DaemonGetSessionMessagesResult = ReturnType<
+  (typeof protocol.daemon.DaemonGetSessionMessagesResultSchema)['parse']
+>
+type DaemonSearchSessionsParams = ReturnType<
+  (typeof protocol.daemon.DaemonSearchSessionsRequestParamsSchema)['parse']
+>
+type DaemonSearchSessionsResult = ReturnType<
+  (typeof protocol.daemon.DaemonSearchSessionsResultSchema)['parse']
+>
+type DaemonArchiveSessionResult = ReturnType<
+  (typeof protocol.daemon.DaemonArchiveSessionResultSchema)['parse']
+>
+type DaemonUnarchiveSessionResult = ReturnType<
+  (typeof protocol.daemon.DaemonUnarchiveSessionResultSchema)['parse']
+>
+type DaemonListFilesParams = ReturnType<
+  (typeof protocol.daemon.DaemonListFilesRequestParamsSchema)['parse']
+>
+type DaemonListFilesResult = ReturnType<
+  (typeof protocol.daemon.DaemonListFilesResultSchema)['parse']
+>
+type DaemonSearchFilesParams = ReturnType<
+  (typeof protocol.daemon.DaemonSearchFilesRequestParamsSchema)['parse']
+>
+type DaemonSearchFilesResult = ReturnType<
+  (typeof protocol.daemon.DaemonSearchFilesResultSchema)['parse']
+>
+
+type SchemaParser<TResult> = {
+  parse: (value: unknown) => TResult
+}
+
+type DaemonConnectionTarget =
+  | {
+      type: 'local'
+      daemonPort?: number
+    }
+  | {
+      type: 'url'
+      url: string
+    }
+  | {
+      type: 'computer'
+      computerId: string
+      relayBaseUrl?: string
+    }
+
+type ResolveWebSocketUrlOptions = Parameters<typeof sdkResolveWebSocketUrl>[0]
+
+type CreateSdkWebSocketTransportContext = {
+  target: DaemonConnectionTargetSnapshot
+}
 
 type RpcResponseEnvelope<TResult = unknown> = {
   jsonrpc: typeof JSON_RPC_VERSION
@@ -100,10 +159,13 @@ type DaemonSocketLike = {
 
 export interface CreateDaemonTransportOptions {
   authProvider?: DaemonAuthProvider
+  daemonTarget?: DaemonConnectionTarget
   createWebSocket?: (url: string) => DaemonSocketLike
-  createSdkWebSocketTransport?: () => SdkWebSocketTransportLike
+  createSdkWebSocketTransport?: (
+    context: CreateSdkWebSocketTransportContext,
+  ) => SdkWebSocketTransportLike
   ensureLocalDaemon?: () => Promise<{ port: number }>
-  resolveWebSocketUrl?: (options: { apiKey: string; daemonPort: number }) => string
+  resolveWebSocketUrl?: (options: ResolveWebSocketUrlOptions) => string
   resolveCandidatePorts?: () => Promise<number[]>
   reconnectBaseDelayMs?: number
   reconnectMaxDelayMs?: number
@@ -118,6 +180,14 @@ export interface DaemonTransport {
   listSessions: () => SessionRecord[]
   refreshSessions: () => Promise<void>
   supportsMethod: (method: string) => boolean
+  getSessionMessages: (
+    params: DaemonGetSessionMessagesParams,
+  ) => Promise<DaemonGetSessionMessagesResult>
+  searchSessions: (params: DaemonSearchSessionsParams) => Promise<DaemonSearchSessionsResult>
+  archiveSession: (sessionId: string) => Promise<DaemonArchiveSessionResult>
+  unarchiveSession: (sessionId: string) => Promise<DaemonUnarchiveSessionResult>
+  listFiles: (params: DaemonListFilesParams) => Promise<DaemonListFilesResult>
+  searchFiles: (params: DaemonSearchFilesParams) => Promise<DaemonSearchFilesResult>
   forkSession: (sessionId: string) => Promise<{ newSessionId: string }>
   renameSession: (sessionId: string, title: string) => Promise<{ success: true }>
 }
@@ -380,10 +450,13 @@ type DaemonRpcConnection = WsRpcConnection | SdkTransportRpcConnection
 
 class ManagedDaemonTransport implements DaemonTransport {
   private readonly authProvider?: DaemonAuthProvider
+  private readonly daemonTarget: DaemonConnectionTarget
   private readonly createWebSocket: (url: string) => DaemonSocketLike
-  private readonly createSdkWebSocketTransport: () => SdkWebSocketTransportLike
+  private readonly createSdkWebSocketTransport: (
+    context: CreateSdkWebSocketTransportContext,
+  ) => SdkWebSocketTransportLike
   private readonly ensureLocalDaemon: () => Promise<{ port: number }>
-  private readonly resolveWebSocketUrl: (options: { apiKey: string; daemonPort: number }) => string
+  private readonly resolveWebSocketUrl: (options: ResolveWebSocketUrlOptions) => string
   private readonly resolveCandidatePorts: () => Promise<number[]>
   private readonly reconnectBaseDelayMs: number
   private readonly reconnectMaxDelayMs: number
@@ -414,9 +487,21 @@ class ManagedDaemonTransport implements DaemonTransport {
 
   constructor(options: CreateDaemonTransportOptions) {
     this.authProvider = options.authProvider
+    this.daemonTarget = options.daemonTarget ?? { type: 'local' }
     this.createWebSocket = options.createWebSocket ?? ((url) => new WebSocket(url))
     this.createSdkWebSocketTransport =
-      options.createSdkWebSocketTransport ?? (() => new WebSocketTransport())
+      options.createSdkWebSocketTransport ??
+      (({ target }) =>
+        new WebSocketTransport(
+          target.type === 'computer'
+            ? {
+                connectionTimeoutMs: 45_000,
+                maxConnectRetries: 10,
+                initialRetryDelayMs: 2_000,
+                maxRetryDelayMs: 10_000,
+              }
+            : undefined,
+        ))
     this.ensureLocalDaemon = options.ensureLocalDaemon ?? sdkEnsureLocalDaemon
     this.resolveWebSocketUrl = options.resolveWebSocketUrl ?? sdkResolveWebSocketUrl
     this.resolveCandidatePorts = options.resolveCandidatePorts ?? resolveKnownDaemonPorts
@@ -452,6 +537,7 @@ class ManagedDaemonTransport implements DaemonTransport {
     return {
       status: this.status,
       connectedPort: this.connectedPort,
+      target: this.getTargetSnapshot(),
       lastError: this.lastError,
       lastConnectedAt: this.lastConnectedAt,
       lastSyncAt: this.lastSyncAt,
@@ -485,6 +571,62 @@ class ManagedDaemonTransport implements DaemonTransport {
     this.assertMethodSupported(DAEMON_METHOD.RENAME_SESSION)
 
     return connection.request(DAEMON_METHOD.RENAME_SESSION, { sessionId, title })
+  }
+
+  async getSessionMessages(
+    params: DaemonGetSessionMessagesParams,
+  ): Promise<DaemonGetSessionMessagesResult> {
+    return this.requestSupportedDaemonMethod(
+      DAEMON_METHOD.GET_SESSION_MESSAGES,
+      protocol.daemon.DaemonGetSessionMessagesRequestParamsSchema,
+      protocol.daemon.DaemonGetSessionMessagesResultSchema,
+      params,
+    )
+  }
+
+  async searchSessions(params: DaemonSearchSessionsParams): Promise<DaemonSearchSessionsResult> {
+    return this.requestSupportedDaemonMethod(
+      DAEMON_METHOD.SEARCH_SESSIONS,
+      protocol.daemon.DaemonSearchSessionsRequestParamsSchema,
+      protocol.daemon.DaemonSearchSessionsResultSchema,
+      params,
+    )
+  }
+
+  async archiveSession(sessionId: string): Promise<DaemonArchiveSessionResult> {
+    return this.requestSupportedDaemonMethod(
+      DAEMON_METHOD.ARCHIVE_SESSION,
+      protocol.daemon.DaemonArchiveSessionRequestParamsSchema,
+      protocol.daemon.DaemonArchiveSessionResultSchema,
+      { sessionId },
+    )
+  }
+
+  async unarchiveSession(sessionId: string): Promise<DaemonUnarchiveSessionResult> {
+    return this.requestSupportedDaemonMethod(
+      DAEMON_METHOD.UNARCHIVE_SESSION,
+      protocol.daemon.DaemonUnarchiveSessionRequestParamsSchema,
+      protocol.daemon.DaemonUnarchiveSessionResultSchema,
+      { sessionId },
+    )
+  }
+
+  async listFiles(params: DaemonListFilesParams): Promise<DaemonListFilesResult> {
+    return this.requestSupportedDaemonMethod(
+      DAEMON_METHOD.LIST_FILES,
+      protocol.daemon.DaemonListFilesRequestParamsSchema,
+      protocol.daemon.DaemonListFilesResultSchema,
+      params,
+    )
+  }
+
+  async searchFiles(params: DaemonSearchFilesParams): Promise<DaemonSearchFilesResult> {
+    return this.requestSupportedDaemonMethod(
+      DAEMON_METHOD.SEARCH_FILES,
+      protocol.daemon.DaemonSearchFilesRequestParamsSchema,
+      protocol.daemon.DaemonSearchFilesResultSchema,
+      params,
+    )
   }
 
   async refreshSessions(): Promise<void> {
@@ -563,12 +705,11 @@ class ManagedDaemonTransport implements DaemonTransport {
       throw new Error('Daemon authentication credentials are unavailable.')
     }
 
-    const { port } = await this.ensureLocalDaemon()
-    const url = this.resolveWebSocketUrl({
-      apiKey: credentials.apiKey ?? credentials.token ?? '',
-      daemonPort: port,
-    })
-    const transport = this.createSdkWebSocketTransport()
+    const { options, connectedPort, target } = await this.resolveSdkConnectOptions(
+      credentials.apiKey ?? credentials.token ?? '',
+    )
+    const url = this.resolveWebSocketUrl(options)
+    const transport = this.createSdkWebSocketTransport({ target })
 
     await transport.connect(url)
     const connection = new SdkTransportRpcConnection(transport)
@@ -591,7 +732,7 @@ class ManagedDaemonTransport implements DaemonTransport {
         connection.dispose(error)
         this.handleConnectionLoss(error)
       })
-      this.connectedPort = port
+      this.connectedPort = connectedPort
       this.status = 'connected'
       this.lastError = null
       this.lastConnectedAt = new Date().toISOString()
@@ -677,6 +818,87 @@ class ManagedDaemonTransport implements DaemonTransport {
   private assertMethodSupported(method: string): void {
     if (!this.supportsMethod(method)) {
       throw new Error(`Daemon missing required capability: ${method}`)
+    }
+  }
+
+  private async requestSupportedDaemonMethod<TParams, TResult>(
+    method: string,
+    paramsSchema: SchemaParser<TParams>,
+    resultSchema: SchemaParser<TResult>,
+    params: TParams,
+  ): Promise<TResult> {
+    const connection = this.requireConnection()
+
+    this.assertMethodSupported(method)
+
+    const result = await connection.request(method, paramsSchema.parse(params))
+    return resultSchema.parse(result)
+  }
+
+  private async resolveSdkConnectOptions(apiKey: string): Promise<{
+    options: ResolveWebSocketUrlOptions
+    connectedPort: number | null
+    target: DaemonConnectionTargetSnapshot
+  }> {
+    if (this.daemonTarget.type === 'url') {
+      return {
+        options: {
+          apiKey,
+          url: this.daemonTarget.url,
+        } satisfies ConnectDaemonOptions,
+        connectedPort: null,
+        target: this.getTargetSnapshot(),
+      }
+    }
+
+    if (this.daemonTarget.type === 'computer') {
+      return {
+        options: {
+          apiKey,
+          machine: {
+            type: MachineType.Computer,
+            computerId: this.daemonTarget.computerId,
+          },
+          ...(this.daemonTarget.relayBaseUrl
+            ? { relayBaseUrl: this.daemonTarget.relayBaseUrl }
+            : {}),
+        } satisfies ConnectDaemonOptions,
+        connectedPort: null,
+        target: this.getTargetSnapshot(),
+      }
+    }
+
+    const { port } = await this.ensureLocalDaemon()
+
+    return {
+      options: {
+        apiKey,
+        daemonPort: this.daemonTarget.daemonPort ?? port,
+      } satisfies ConnectDaemonOptions,
+      connectedPort: this.daemonTarget.daemonPort ?? port,
+      target: this.getTargetSnapshot(this.daemonTarget.daemonPort ?? port),
+    }
+  }
+
+  private getTargetSnapshot(localPort?: number): DaemonConnectionTargetSnapshot {
+    if (this.daemonTarget.type === 'url') {
+      return {
+        type: 'url',
+        label: 'Explicit daemon URL',
+      }
+    }
+
+    if (this.daemonTarget.type === 'computer') {
+      return {
+        type: 'computer',
+        label: `Factory computer ${this.daemonTarget.computerId}`,
+        computerId: this.daemonTarget.computerId,
+      }
+    }
+
+    return {
+      type: 'local',
+      label: `Local daemon${localPort ? `:${localPort}` : ''}`,
     }
   }
 

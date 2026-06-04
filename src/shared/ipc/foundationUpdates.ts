@@ -229,6 +229,9 @@ export function daemonSnapshotEqual(
   return (
     left.status === right.status &&
     left.connectedPort === right.connectedPort &&
+    left.target?.type === right.target?.type &&
+    left.target?.label === right.target?.label &&
+    left.target?.computerId === right.target?.computerId &&
     left.lastError === right.lastError &&
     left.lastConnectedAt === right.lastConnectedAt &&
     left.lastSyncAt === right.lastSyncAt &&

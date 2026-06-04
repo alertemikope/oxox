@@ -346,9 +346,16 @@ export interface DatabaseDiagnostics {
 
 export type DaemonConnectionStatus = 'connected' | 'disconnected' | 'reconnecting'
 
+export interface DaemonConnectionTargetSnapshot {
+  type: 'local' | 'url' | 'computer'
+  label: string
+  computerId?: string
+}
+
 export interface DaemonConnectionSnapshot {
   status: DaemonConnectionStatus
   connectedPort: number | null
+  target?: DaemonConnectionTargetSnapshot
   lastError: string | null
   lastConnectedAt: string | null
   lastSyncAt: string | null

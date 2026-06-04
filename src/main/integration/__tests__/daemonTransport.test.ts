@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 
+import { MachineType, protocol } from '@factory/droid-sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createDaemonTransport } from '../daemon/transport'
@@ -331,6 +332,140 @@ describe('createDaemonTransport', () => {
     expect(sdkTransport.close).toHaveBeenCalledTimes(1)
   })
 
+  it('connects to explicit daemon URLs without local daemon discovery and redacts target status', async () => {
+    const sdkTransport = new MockSdkWebSocketTransport()
+    const ensureLocalDaemon = vi.fn().mockResolvedValue({ port: 45678 })
+    const resolveWebSocketUrl = vi.fn().mockReturnValue('wss://daemon.example/ws?apiKey=secret-key')
+    const transport = createDaemonTransport({
+      authProvider: {
+        getApiKey: () => 'sdk-key',
+      },
+      daemonTarget: {
+        type: 'url',
+        url: 'wss://daemon.example/ws?apiKey=secret-key',
+      },
+      ensureLocalDaemon,
+      resolveWebSocketUrl,
+      createSdkWebSocketTransport: () => sdkTransport,
+      reconnectBaseDelayMs: 1_000,
+      refreshIntervalMs: 60_000,
+    })
+
+    transport.start()
+    await flushMicrotasks()
+
+    expect(ensureLocalDaemon).not.toHaveBeenCalled()
+    expect(resolveWebSocketUrl).toHaveBeenCalledWith({
+      apiKey: 'sdk-key',
+      url: 'wss://daemon.example/ws?apiKey=secret-key',
+    })
+    expect(sdkTransport.connect).toHaveBeenCalledWith('wss://daemon.example/ws?apiKey=secret-key')
+
+    sdkTransport.respond(getLastSdkRequestId(sdkTransport), {
+      userId: 'user-1',
+      orgId: 'org-1',
+    })
+    await flushMicrotasks()
+    sdkTransport.respond(getLastSdkRequestId(sdkTransport), {
+      supportedMethods: ['daemon.list_opened_sessions', 'daemon.list_available_sessions'],
+      sessions: [],
+    })
+    await flushMicrotasks()
+    sdkTransport.respond(getLastSdkRequestId(sdkTransport), {
+      sessions: [],
+      hasMore: false,
+    })
+    await flushMicrotasks()
+
+    expect(transport.getStatus()).toMatchObject({
+      status: 'connected',
+      connectedPort: null,
+      target: {
+        type: 'url',
+        label: 'Explicit daemon URL',
+      },
+    })
+    expect(JSON.stringify(transport.getStatus())).not.toContain('secret-key')
+
+    await transport.stop()
+  })
+
+  it('connects to SDK computer relay daemon targets', async () => {
+    const sdkTransport = new MockSdkWebSocketTransport()
+    const ensureLocalDaemon = vi.fn().mockResolvedValue({ port: 45678 })
+    const resolveWebSocketUrl = vi
+      .fn()
+      .mockReturnValue('wss://relay.example/v0/computer/computer-123/client')
+    const createSdkWebSocketTransport = vi.fn(() => sdkTransport)
+    const transport = createDaemonTransport({
+      authProvider: {
+        getApiKey: () => 'sdk-key',
+      },
+      daemonTarget: {
+        type: 'computer',
+        computerId: 'computer-123',
+        relayBaseUrl: 'wss://relay.example',
+      },
+      ensureLocalDaemon,
+      resolveWebSocketUrl,
+      createSdkWebSocketTransport,
+      reconnectBaseDelayMs: 1_000,
+      refreshIntervalMs: 60_000,
+    })
+
+    transport.start()
+    await flushMicrotasks()
+
+    expect(ensureLocalDaemon).not.toHaveBeenCalled()
+    expect(resolveWebSocketUrl).toHaveBeenCalledWith({
+      apiKey: 'sdk-key',
+      machine: {
+        type: MachineType.Computer,
+        computerId: 'computer-123',
+      },
+      relayBaseUrl: 'wss://relay.example',
+    })
+    expect(createSdkWebSocketTransport).toHaveBeenCalledWith({
+      target: {
+        type: 'computer',
+        label: 'Factory computer computer-123',
+        computerId: 'computer-123',
+      },
+    })
+    expect(sdkTransport.connect).toHaveBeenCalledWith(
+      'wss://relay.example/v0/computer/computer-123/client',
+    )
+
+    sdkTransport.respond(getLastSdkRequestId(sdkTransport), {
+      userId: 'user-1',
+      orgId: 'org-1',
+    })
+    await flushMicrotasks()
+    sdkTransport.respond(getLastSdkRequestId(sdkTransport), {
+      supportedMethods: ['daemon.list_opened_sessions', 'daemon.list_available_sessions'],
+      sessions: [],
+    })
+    await flushMicrotasks()
+    sdkTransport.respond(getLastSdkRequestId(sdkTransport), {
+      sessions: [],
+      hasMore: false,
+    })
+    await flushMicrotasks()
+
+    expect(transport.getStatus()).toMatchObject({
+      status: 'connected',
+      connectedPort: null,
+      target: {
+        type: 'computer',
+        label: 'Factory computer computer-123',
+        computerId: 'computer-123',
+      },
+    })
+    expect(JSON.stringify(transport.getStatus())).not.toContain('sdk-key')
+
+    await transport.stop()
+  })
+
   it('tracks supported methods and exposes daemon fork and rename capabilities', async () => {
     const sockets: MockWebSocket[] = []
     const transport = createDaemonTransport({
@@ -600,6 +735,187 @@ describe('createDaemonTransport', () => {
     })
 
     await expect(result).resolves.toEqual({ success: true })
+    await transport.stop()
+  })
+
+  it('sends SDK daemon catalog, history, search, archive, and file requests', async () => {
+    const sockets: MockWebSocket[] = []
+    const daemonMethod = protocol.daemon.DaemonDroidMethod
+    const transport = createDaemonTransport({
+      authProvider: {
+        getApiKey: () => 'catalog-key',
+      },
+      createWebSocket: (url) => {
+        const socket = new MockWebSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+      resolveCandidatePorts: async () => [37643],
+      reconnectBaseDelayMs: 1_000,
+      refreshIntervalMs: 60_000,
+    })
+
+    transport.start()
+    await flushMicrotasks()
+
+    sockets[0]?.open()
+    await flushMicrotasks()
+    const socket = getRequiredValue(sockets[0], 'Expected daemon socket')
+
+    socket.respond(getLastRequestId(socket), { userId: 'user-1', orgId: 'org-1' })
+    await flushMicrotasks()
+    socket.respond(getLastRequestId(socket), {
+      supportedMethods: [
+        daemonMethod.LIST_OPENED_SESSIONS,
+        daemonMethod.LIST_AVAILABLE_SESSIONS,
+        daemonMethod.GET_SESSION_MESSAGES,
+        daemonMethod.SEARCH_SESSIONS,
+        daemonMethod.ARCHIVE_SESSION,
+        daemonMethod.UNARCHIVE_SESSION,
+        daemonMethod.LIST_FILES,
+        daemonMethod.SEARCH_FILES,
+      ],
+      supportedNotifications: [],
+      sessions: [],
+    })
+    await flushMicrotasks()
+    socket.respond(getLastRequestId(socket), {
+      sessions: [],
+      hasMore: false,
+    })
+    await flushMicrotasks()
+
+    const messages = transport.getSessionMessages({
+      sessionId: 'session-alpha',
+      limit: 2,
+      cursor: 'cursor-1',
+    })
+    expect(JSON.parse(socket.sentPayloads.at(-1) ?? '{}')).toMatchObject({
+      method: daemonMethod.GET_SESSION_MESSAGES,
+      params: {
+        sessionId: 'session-alpha',
+        limit: 2,
+        cursor: 'cursor-1',
+      },
+    })
+    socket.respond(getLastRequestId(socket), {
+      messages: [],
+      hasMore: true,
+      nextCursor: 'cursor-2',
+    })
+    await expect(messages).resolves.toEqual({
+      messages: [],
+      hasMore: true,
+      nextCursor: 'cursor-2',
+    })
+
+    const search = transport.searchSessions({
+      query: 'daemon',
+      kind: 'all',
+      limitSessions: 5,
+      limitHitsPerSession: 3,
+      contextChars: 40,
+    })
+    expect(JSON.parse(socket.sentPayloads.at(-1) ?? '{}')).toMatchObject({
+      method: daemonMethod.SEARCH_SESSIONS,
+      params: {
+        query: 'daemon',
+        kind: 'all',
+        limitSessions: 5,
+        limitHitsPerSession: 3,
+        contextChars: 40,
+      },
+    })
+    socket.respond(getLastRequestId(socket), {
+      query: 'daemon',
+      sessions: [
+        {
+          sessionId: 'session-alpha',
+          title: 'Alpha',
+          hits: [
+            {
+              docId: 'doc-1',
+              kind: 'message_text',
+              snippets: ['daemon result'],
+              messageRole: 'assistant',
+            },
+          ],
+        },
+      ],
+    })
+    await expect(search).resolves.toMatchObject({
+      query: 'daemon',
+      sessions: [
+        {
+          sessionId: 'session-alpha',
+          hits: [
+            {
+              docId: 'doc-1',
+              kind: 'message_text',
+            },
+          ],
+        },
+      ],
+    })
+
+    const archive = transport.archiveSession('session-alpha')
+    expect(JSON.parse(socket.sentPayloads.at(-1) ?? '{}')).toMatchObject({
+      method: daemonMethod.ARCHIVE_SESSION,
+      params: { sessionId: 'session-alpha' },
+    })
+    socket.respond(getLastRequestId(socket), {
+      success: true,
+      archivedAt: '2026-06-04T12:00:00.000Z',
+    })
+    await expect(archive).resolves.toEqual({
+      success: true,
+      archivedAt: '2026-06-04T12:00:00.000Z',
+    })
+
+    const unarchive = transport.unarchiveSession('session-alpha')
+    expect(JSON.parse(socket.sentPayloads.at(-1) ?? '{}')).toMatchObject({
+      method: daemonMethod.UNARCHIVE_SESSION,
+      params: { sessionId: 'session-alpha' },
+    })
+    socket.respond(getLastRequestId(socket), { success: true })
+    await expect(unarchive).resolves.toEqual({ success: true })
+
+    const files = transport.listFiles({ sessionId: 'session-alpha', showHidden: true })
+    expect(JSON.parse(socket.sentPayloads.at(-1) ?? '{}')).toMatchObject({
+      method: daemonMethod.LIST_FILES,
+      params: { sessionId: 'session-alpha', showHidden: true },
+    })
+    socket.respond(getLastRequestId(socket), {
+      files: ['AGENTS.md', '.factory/mcp.json'],
+    })
+    await expect(files).resolves.toEqual({
+      files: ['AGENTS.md', '.factory/mcp.json'],
+    })
+
+    const fileSearch = transport.searchFiles({
+      sessionId: 'session-alpha',
+      query: 'agent',
+      maxResults: 10,
+      showHidden: true,
+    })
+    expect(JSON.parse(socket.sentPayloads.at(-1) ?? '{}')).toMatchObject({
+      method: daemonMethod.SEARCH_FILES,
+      params: {
+        sessionId: 'session-alpha',
+        query: 'agent',
+        maxResults: 10,
+        showHidden: true,
+      },
+    })
+    socket.respond(getLastRequestId(socket), {
+      files: ['AGENTS.md'],
+      totalFiles: 2,
+    })
+    await expect(fileSearch).resolves.toEqual({
+      files: ['AGENTS.md'],
+      totalFiles: 2,
+    })
+
     await transport.stop()
   })
 

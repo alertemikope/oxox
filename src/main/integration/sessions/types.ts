@@ -20,7 +20,7 @@ import type {
 } from '../../../shared/ipc/contracts'
 
 import type { DatabaseService } from '../database/service'
-import type { DroidSdkSessionFactory } from '../droidSdk/factory'
+import type { DroidSdkProcessTransportConfig, DroidSdkSessionFactory } from '../droidSdk/factory'
 import type { SessionEvent } from '../protocol/sessionEvents'
 
 export type ReadableLike = Readable | ReadableStream<Uint8Array>
@@ -176,6 +176,9 @@ export interface CreateSessionProcessManagerOptions {
   database: DatabaseService
   droidPath?: string
   droidSdkSessionFactory?: DroidSdkSessionFactory
+  sessionTransportFactory?: (
+    config: DroidSdkProcessTransportConfig,
+  ) => StreamJsonRpcProcessTransportLike
   spawnProcess?: (request: SpawnProcessRequest) => SessionChildProcess
   isDroidProcess?: (processId: number) => boolean
   isProcessAlive?: (processId: number) => boolean

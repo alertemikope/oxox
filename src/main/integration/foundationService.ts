@@ -34,11 +34,14 @@ import type {
   SyncMetadataRecord,
 } from '../../shared/ipc/contracts'
 import { createBackgroundArtifactScanner } from './artifacts/backgroundScanner'
-import { createEnvironmentDaemonAuthProvider } from './daemon/auth'
+import { createEnvironmentDaemonAuthProvider, type DaemonAuthProvider } from './daemon/auth'
 import { createDaemonSessionControl } from './daemon/sessionControl'
-import { createDaemonTransport } from './daemon/transport'
+import { createDaemonTransport, type DaemonTransport } from './daemon/transport'
 import { type CreateDatabaseServiceOptions, createDatabaseService } from './database/service'
 import { resolveDroidCliStatus } from './droid/resolveDroidCliStatus'
+import { DroidSdkDaemonSessionTransport } from './droidSdk/daemonTransport'
+import type { DroidSdkProcessTransportConfig } from './droidSdk/factory'
+import { DroidSdkSessionTransport } from './droidSdk/transport'
 import {
   createFoundationBootstrapState,
   parseDroidExecHelpBootstrap,
@@ -54,6 +57,7 @@ import { createFoundationSessionCatalog } from './foundation/sessionCatalog'
 import { createLiveSessionSearchIndexScheduler } from './search/liveSessionSearchIndexScheduler'
 import { createSessionSearchService } from './search/sessionSearchService'
 import { createSessionProcessManager } from './sessions/processManager'
+import type { StreamJsonRpcProcessTransportLike } from './sessions/types'
 import { loadSessionTranscriptFromFile } from './transcripts/service'
 
 export interface FoundationService {
@@ -141,6 +145,46 @@ export interface FoundationService {
   ) => (() => void) | undefined
 }
 
+export interface CreateFoundationSessionTransportFactoryOptions {
+  authProvider: DaemonAuthProvider
+  daemonTransport: Pick<DaemonTransport, 'listSessions'>
+  createDaemonSessionTransport?: (options: {
+    authProvider: DaemonAuthProvider
+    cwd?: string
+    sessionId?: string | null
+  }) => StreamJsonRpcProcessTransportLike
+  createProcessSessionTransport?: (
+    config: DroidSdkProcessTransportConfig,
+  ) => StreamJsonRpcProcessTransportLike
+}
+
+export function createFoundationSessionTransportFactory({
+  authProvider,
+  daemonTransport,
+  createDaemonSessionTransport = (options) => new DroidSdkDaemonSessionTransport(options),
+  createProcessSessionTransport = (config) => new DroidSdkSessionTransport(config),
+}: CreateFoundationSessionTransportFactoryOptions): (
+  config: DroidSdkProcessTransportConfig,
+) => StreamJsonRpcProcessTransportLike {
+  return (config) => {
+    const isDaemonSession =
+      typeof config.sessionId === 'string' &&
+      daemonTransport
+        .listSessions()
+        .some((session) => session.id === config.sessionId && session.transport === 'daemon')
+
+    if (isDaemonSession) {
+      return createDaemonSessionTransport({
+        authProvider,
+        cwd: config.cwd,
+        sessionId: config.sessionId,
+      })
+    }
+
+    return createProcessSessionTransport(config)
+  }
+}
+
 export function createFoundationService(options: CreateDatabaseServiceOptions): FoundationService {
   const foundationUpdateListeners = new Set<(payload: FoundationChangedPayload) => void>()
   const emitPayload = (payload: FoundationChangedPayload): void => {
@@ -164,8 +208,9 @@ export function createFoundationService(options: CreateDatabaseServiceOptions): 
     sessionsRoot: join(homedir(), '.factory', 'sessions'),
   })
   const sessionsRoot = join(homedir(), '.factory', 'sessions')
+  const daemonAuthProvider = createEnvironmentDaemonAuthProvider()
   const daemonTransport = createDaemonTransport({
-    authProvider: createEnvironmentDaemonAuthProvider(),
+    authProvider: daemonAuthProvider,
     onStateChange: () => {
       emitFoundationChanged()
     },
@@ -173,6 +218,10 @@ export function createFoundationService(options: CreateDatabaseServiceOptions): 
   const sessionProcessManager = createSessionProcessManager({
     database,
     droidPath: droidCliStatus.path ?? undefined,
+    sessionTransportFactory: createFoundationSessionTransportFactory({
+      authProvider: daemonAuthProvider,
+      daemonTransport,
+    }),
   })
   const liveSessionRuntime = createFoundationLiveSessionRuntime({
     onChange: emitFoundationChanged,

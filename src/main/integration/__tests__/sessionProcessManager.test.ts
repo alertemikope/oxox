@@ -18,6 +18,7 @@ import {
 } from '../droidSdk/factory'
 import { consumeReadable, waitForExit } from '../sessions/processLifecycle'
 import { createSessionProcessManager } from '../sessions/processManager'
+import type { SessionEventSink, StreamJsonRpcProcessTransportLike } from '../sessions/types'
 
 const encoder = new TextEncoder()
 
@@ -348,6 +349,140 @@ describe('createSessionProcessManager', () => {
     while (cleanup.length > 0) {
       await cleanup.pop()?.()
     }
+  })
+
+  it('can create live sessions through an injected SDK daemon transport factory', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'oxox-session-process-'))
+    const database = createDatabaseService({
+      userDataPath,
+      databaseFactory: createSqliteDatabaseFactory(),
+    })
+    cleanup.push(() => database.close())
+
+    const transport: StreamJsonRpcProcessTransportLike = {
+      processId: 0,
+      subscribe: (_sink: SessionEventSink) => () => undefined,
+      initializeSession: vi.fn(async () => ({
+        sessionId: 'daemon-live-1',
+        session: { messages: [] },
+        settings: { modelId: 'gpt-5.5' },
+        availableModels: [{ id: 'gpt-5.5', displayName: 'GPT 5.5', modelProvider: 'openai' }],
+        cwd: '/tmp/daemon-project',
+        isAgentLoopInProgress: false,
+      })),
+      loadSession: vi.fn(),
+      interruptSession: vi.fn(),
+      addUserMessage: vi.fn(),
+      forkSession: vi.fn(),
+      getRewindInfo: vi.fn(),
+      executeRewind: vi.fn(),
+      compactSession: vi.fn(),
+      updateSessionSettings: vi.fn(),
+      resolvePermissionRequest: vi.fn(),
+      resolveAskUserRequest: vi.fn(),
+      dispose: vi.fn(),
+    }
+    const sessionTransportFactory = vi.fn(() => transport)
+    const spawnProcess = vi.fn()
+    const manager = createSessionProcessManager({
+      database,
+      droidPath: '/opt/factory/bin/droid',
+      sessionTransportFactory,
+      spawnProcess,
+    })
+    cleanup.push(() => manager.dispose())
+
+    const snapshot = await manager.createSession({
+      cwd: '/tmp/daemon-project',
+      viewerId: 'window-a',
+    })
+
+    expect(sessionTransportFactory).toHaveBeenCalledWith({
+      cwd: '/tmp/daemon-project',
+      droidPath: '/opt/factory/bin/droid',
+      sessionId: null,
+    })
+    expect(spawnProcess).not.toHaveBeenCalled()
+    expect(snapshot).toMatchObject({
+      sessionId: 'daemon-live-1',
+      processId: 0,
+      projectWorkspacePath: '/tmp/daemon-project',
+    })
+  })
+
+  it('throws explicit errors when a live transport lacks renderer-exposed optional actions', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'oxox-session-process-'))
+    const database = createDatabaseService({
+      userDataPath,
+      databaseFactory: createSqliteDatabaseFactory(),
+    })
+    cleanup.push(() => database.close())
+
+    const transport: StreamJsonRpcProcessTransportLike = {
+      processId: 0,
+      subscribe: (_sink: SessionEventSink) => () => undefined,
+      initializeSession: vi.fn(async () => ({
+        sessionId: 'limited-session-1',
+        session: { messages: [] },
+        settings: { modelId: 'gpt-5.5' },
+        availableModels: [{ id: 'gpt-5.5', displayName: 'GPT 5.5', modelProvider: 'openai' }],
+        cwd: '/tmp/limited-project',
+        isAgentLoopInProgress: false,
+      })),
+      loadSession: vi.fn(),
+      interruptSession: vi.fn(),
+      addUserMessage: vi.fn(),
+      forkSession: vi.fn(),
+      getRewindInfo: vi.fn(),
+      executeRewind: vi.fn(),
+      compactSession: vi.fn(),
+      updateSessionSettings: vi.fn(),
+      resolvePermissionRequest: vi.fn(),
+      resolveAskUserRequest: vi.fn(),
+      dispose: vi.fn(),
+    }
+    const manager = createSessionProcessManager({
+      database,
+      sessionTransportFactory: () => transport,
+    })
+    cleanup.push(() => manager.dispose())
+
+    await manager.createSession({
+      cwd: '/tmp/limited-project',
+      viewerId: 'window-a',
+    })
+
+    await expect(
+      manager.addMcpServer('limited-session-1', { name: 'linear', type: 'http' }),
+    ).rejects.toThrow('Session transport does not support addMcpServer.')
+    await expect(manager.removeMcpServer('limited-session-1', 'linear')).rejects.toThrow(
+      'Session transport does not support removeMcpServer.',
+    )
+    await expect(manager.toggleMcpServer('limited-session-1', 'linear', false)).rejects.toThrow(
+      'Session transport does not support toggleMcpServer.',
+    )
+    await expect(manager.authenticateMcpServer('limited-session-1', 'linear')).rejects.toThrow(
+      'Session transport does not support authenticateMcpServer.',
+    )
+    await expect(manager.cancelMcpAuth('limited-session-1', 'linear')).rejects.toThrow(
+      'Session transport does not support cancelMcpAuth.',
+    )
+    await expect(manager.clearMcpAuth('limited-session-1', 'linear')).rejects.toThrow(
+      'Session transport does not support clearMcpAuth.',
+    )
+    await expect(
+      manager.submitMcpAuthCode('limited-session-1', {
+        serverName: 'linear',
+        code: 'oauth-code',
+        state: 'oauth-state',
+      }),
+    ).rejects.toThrow('Session transport does not support submitMcpAuthCode.')
+    await expect(
+      manager.toggleMcpTool('limited-session-1', 'linear', 'create_issue', false),
+    ).rejects.toThrow('Session transport does not support toggleMcpTool.')
+    await expect(
+      manager.killWorkerSession('limited-session-1', 'worker-session-1'),
+    ).rejects.toThrow('Session transport does not support killWorkerSession.')
   })
 
   it('attaches to a running session without respawning and replays buffered history after detach', async () => {

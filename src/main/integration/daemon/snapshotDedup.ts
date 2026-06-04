@@ -37,6 +37,7 @@ export function getDaemonSnapshotUpdate(
     status: partial.status ?? current.status,
     connectedPort:
       partial.connectedPort === undefined ? current.connectedPort : partial.connectedPort,
+    target: partial.target === undefined ? current.target : partial.target,
     lastError: partial.lastError === undefined ? current.lastError : partial.lastError,
     lastConnectedAt:
       partial.lastConnectedAt === undefined ? current.lastConnectedAt : partial.lastConnectedAt,
