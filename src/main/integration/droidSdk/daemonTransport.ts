@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import {
   type AskUserRequestParams,
+  type AskUserResult,
   convertNotificationToStreamMessage,
   DaemonClient,
   type DroidClientTransport,
+  JSONRPC_VERSION,
+  LEGACY_FACTORY_API_VERSION,
   type LiveSessionAskUserAnswerRecord,
   type LiveSessionAskUserQuestionRecord,
   protocol,
@@ -62,15 +65,6 @@ type Deferred<T> = {
   resolve: (value: T) => void
   reject: (reason?: unknown) => void
   promise: Promise<T>
-}
-
-type AskUserResult = {
-  cancelled: boolean
-  answers: Array<{
-    index: number
-    question: string
-    answer: string
-  }>
 }
 
 type JsonRpcMessage = Record<string, unknown>
@@ -259,8 +253,8 @@ class DaemonTransportRpcConnection implements DaemonRpcClient {
     })
 
     this.transport.send({
-      jsonrpc: '2.0',
-      factoryApiVersion: '1.0.0',
+      jsonrpc: JSONRPC_VERSION,
+      factoryApiVersion: LEGACY_FACTORY_API_VERSION,
       type: 'request',
       id,
       method,
@@ -330,8 +324,8 @@ class ObservedDaemonRpcConnection implements DaemonRpcClient {
     })
 
     this.transport.send({
-      jsonrpc: '2.0',
-      factoryApiVersion: '1.0.0',
+      jsonrpc: JSONRPC_VERSION,
+      factoryApiVersion: LEGACY_FACTORY_API_VERSION,
       type: 'request',
       id,
       method,

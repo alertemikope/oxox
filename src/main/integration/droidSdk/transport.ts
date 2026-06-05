@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import {
   type AskUserRequestParams,
+  type AskUserResult,
   convertNotificationToStreamMessage,
   type DroidClient,
   type DroidClientTransport,
@@ -8,7 +9,6 @@ import {
   type LiveSessionAskUserQuestionRecord,
   ProcessExitError,
   type RequestPermissionRequestParams,
-  SDK_TAG,
   StreamStateTracker,
 } from '@factory/droid-sdk'
 import type {
@@ -50,20 +50,17 @@ import {
   type DroidSdkProcessTransportConfig,
   type DroidSdkSessionFactory,
 } from './factory'
+import {
+  attachOxoxLiveDroidSession,
+  createOxoxLiveDroidSession,
+  loadOxoxLiveDroidSession,
+  type OxoxLiveDroidSession,
+} from './liveDroidSession'
 
 type Deferred<T> = {
   resolve: (value: T) => void
   reject: (reason?: unknown) => void
   promise: Promise<T>
-}
-
-type AskUserResult = {
-  cancelled: boolean
-  answers: Array<{
-    index: number
-    question: string
-    answer: string
-  }>
 }
 
 type JsonRpcMessage = Record<string, unknown>
@@ -175,6 +172,7 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
   private readonly ready: Promise<void>
 
   private currentSessionId: string | null
+  private liveSession: OxoxLiveDroidSession | null = null
   private activeStreamStateTracker: StreamStateTracker | null = null
   private disposed = false
   private _processId = 0
@@ -226,12 +224,8 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
     await this.ready
     const initRequest = normalizeInitializeSessionRequest(request)
 
-    const result = await this.client.initializeSession({
-      machineId: 'oxox-electron',
-      cwd: initRequest.cwd,
-      ...initRequest.settings,
-      tags: [SDK_TAG],
-    })
+    this.liveSession = await createOxoxLiveDroidSession(this.client, initRequest)
+    const result = this.liveSession.initResult as StreamJsonRpcInitializeResult
 
     this.currentSessionId = result.sessionId
     return {
@@ -247,9 +241,8 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
   async loadSession(_requestId: RequestId, sessionId: string): Promise<StreamJsonRpcLoadResult> {
     await this.ready
 
-    const result = await this.client.loadSession({
-      sessionId,
-    })
+    this.liveSession = await loadOxoxLiveDroidSession(this.client, sessionId)
+    const result = this.liveSession.initResult as StreamJsonRpcLoadResult
 
     this.currentSessionId = sessionId
     return {
@@ -263,7 +256,7 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
 
   async interruptSession(_requestId: RequestId): Promise<void> {
     await this.ready
-    await this.client.interruptSession()
+    await this.requireLiveSession().interrupt()
   }
 
   async addUserMessage(
@@ -278,7 +271,7 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
       hasOutputFormat,
       startedAt,
     })
-    await this.client.addUserMessage({
+    await this.requireLiveSession().addUserMessage({
       ...normalizedMessage,
       messageId: randomUUID(),
     })
@@ -286,12 +279,12 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
 
   async forkSession(_requestId: RequestId): Promise<{ newSessionId: string }> {
     await this.ready
-    return this.client.forkSession()
+    return this.requireLiveSession().fork()
   }
 
   async getRewindInfo(_requestId: RequestId, messageId: string): Promise<LiveSessionRewindInfo> {
     await this.ready
-    return this.client.getRewindInfo({ messageId })
+    return this.requireLiveSession().getRewindInfo({ messageId })
   }
 
   async executeRewind(
@@ -299,7 +292,7 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
     params: LiveSessionExecuteRewindParams,
   ): Promise<Omit<LiveSessionExecuteRewindResult, 'snapshot'>> {
     await this.ready
-    return this.client.executeRewind({
+    return this.requireLiveSession().executeRewind({
       messageId: params.messageId,
       filesToRestore: params.filesToRestore,
       filesToDelete: params.filesToDelete,
@@ -312,35 +305,37 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
     customInstructions?: string,
   ): Promise<Omit<LiveSessionCompactResult, 'snapshot'>> {
     await this.ready
-    return this.client.compactSession(customInstructions ? { customInstructions } : {})
+    return this.requireLiveSession().compactSession(
+      customInstructions ? { customInstructions } : {},
+    )
   }
 
   async renameSession(_requestId: RequestId, title: string): Promise<void> {
     await this.ready
-    await this.client.renameSession({ title })
+    await this.requireLiveSession().renameSession({ title })
   }
 
   async listTools(_requestId: RequestId): Promise<LiveSessionToolInfo[]> {
     await this.ready
-    const result = await this.client.listTools()
+    const result = await this.requireLiveSession().listTools()
     return result.tools
   }
 
   async listSkills(_requestId: RequestId): Promise<LiveSessionSkillInfo[]> {
     await this.ready
-    const result = await this.client.listSkills()
+    const result = await this.requireLiveSession().listSkills()
     return result.skills
   }
 
   async listMcpServers(_requestId: RequestId): Promise<LiveSessionMcpServerInfo[]> {
     await this.ready
-    const result = await this.client.listMcpServers()
+    const result = await this.requireLiveSession().listMcpServers()
     return result.servers
   }
 
   async listMcpTools(_requestId: RequestId): Promise<LiveSessionMcpToolInfo[]> {
     await this.ready
-    const result = await this.client.listMcpTools()
+    const result = await this.requireLiveSession().listMcpTools()
     return result.tools
   }
 
@@ -352,12 +347,12 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
 
   async addMcpServer(_requestId: RequestId, config: LiveSessionMcpServerConfig): Promise<void> {
     await this.ready
-    await this.client.addMcpServer(config)
+    await this.requireLiveSession().addMcpServer(config)
   }
 
   async removeMcpServer(_requestId: RequestId, serverName: string): Promise<void> {
     await this.ready
-    await this.client.removeMcpServer({ serverName, settingsLevel: 'user' })
+    await this.requireLiveSession().removeMcpServer({ serverName, settingsLevel: 'user' })
   }
 
   async toggleMcpServer(
@@ -366,12 +361,12 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
     enabled: boolean,
   ): Promise<void> {
     await this.ready
-    await this.client.toggleMcpServer({ serverName, enabled, settingsLevel: 'user' })
+    await this.requireLiveSession().toggleMcpServer({ serverName, enabled, settingsLevel: 'user' })
   }
 
   async authenticateMcpServer(_requestId: RequestId, serverName: string): Promise<void> {
     await this.ready
-    await this.client.authenticateMcpServer({ serverName })
+    await this.requireLiveSession().authenticateMcpServer({ serverName })
   }
 
   async cancelMcpAuth(_requestId: RequestId, serverName: string): Promise<void> {
@@ -417,7 +412,7 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
 
   async getContextStats(_requestId: RequestId): Promise<LiveSessionContextStatsInfo> {
     await this.ready
-    return this.client.getContextStats()
+    return this.requireLiveSession().getContextStats()
   }
 
   async updateSessionSettings(
@@ -425,7 +420,7 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
     settings: Partial<LiveSessionSettings>,
   ): Promise<void> {
     await this.ready
-    await this.client.updateSessionSettings(settings)
+    await this.requireLiveSession().updateSettings(settings)
   }
 
   async resolvePermissionRequest(requestId: RequestId, selectedOption: string): Promise<void> {
@@ -486,16 +481,23 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
 
     try {
       await this.ready.catch(() => undefined)
-      const closeSession = (
-        this.client as {
-          closeSession?: (params: { reason: string }) => Promise<unknown>
-        }
-      ).closeSession
+      if (this.liveSession) {
+        await withTimeout(this.liveSession.close(), 1_000).catch(() => undefined)
+      } else {
+        const closeSession = (
+          this.client as {
+            closeSession?: (params: { reason: string }) => Promise<unknown>
+          }
+        ).closeSession
 
-      if ((this.currentSessionId ?? this.client.sessionId) && typeof closeSession === 'function') {
-        await withTimeout(closeSession.call(this.client, { reason: 'other' }), 1_000).catch(
-          () => undefined,
-        )
+        if (
+          (this.currentSessionId ?? this.client.sessionId) &&
+          typeof closeSession === 'function'
+        ) {
+          await withTimeout(closeSession.call(this.client, { reason: 'other' }), 1_000).catch(
+            () => undefined,
+          )
+        }
       }
       await this.observedTransport.close().catch(() => undefined)
     } finally {
@@ -512,6 +514,19 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
   private async connectTransport(): Promise<void> {
     await this.observedTransport.connect()
     this._processId = this.observedTransport.processId ?? 0
+  }
+
+  private requireLiveSession(): OxoxLiveDroidSession {
+    if (this.liveSession) {
+      return this.liveSession
+    }
+
+    if (this.currentSessionId) {
+      this.liveSession = attachOxoxLiveDroidSession(this.client, this.currentSessionId)
+      return this.liveSession
+    }
+
+    throw new Error('No active Droid session is available.')
   }
 
   private captureServerRequestIds(message: object): void {

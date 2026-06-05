@@ -1,7 +1,11 @@
+import {
+  LEGACY_FACTORY_API_VERSION as FACTORY_API_VERSION,
+  JSONRPC_VERSION as JSON_RPC_VERSION,
+} from '@factory/droid-sdk'
+
 import type { SessionEvent } from './sessionEvents'
 
-export const FACTORY_API_VERSION = '1.0.0'
-export const JSON_RPC_VERSION = '2.0'
+export { FACTORY_API_VERSION, JSON_RPC_VERSION }
 
 export type JsonRpcId = string | number
 

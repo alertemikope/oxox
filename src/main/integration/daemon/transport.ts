@@ -1,5 +1,7 @@
 import {
   type ConnectDaemonOptions,
+  LEGACY_FACTORY_API_VERSION as FACTORY_API_VERSION,
+  JSONRPC_VERSION as JSON_RPC_VERSION,
   MachineType,
   protocol,
   ensureLocalDaemon as sdkEnsureLocalDaemon,
@@ -26,8 +28,6 @@ import { areDaemonSessionsEqual, getDaemonSnapshotUpdate } from './snapshotDedup
 const DEFAULT_REFRESH_INTERVAL_MS = 10_000
 const DEFAULT_RECONNECT_BASE_DELAY_MS = 1_000
 const DEFAULT_RECONNECT_MAX_DELAY_MS = 30_000
-const JSON_RPC_VERSION = '2.0'
-const FACTORY_API_VERSION = '1.0.0'
 const DAEMON_METHOD = protocol.daemon.DaemonDroidMethod
 const DAEMON_SETTINGS_METHOD = protocol.daemon.DaemonSettingsMethod
 const KNOWN_DAEMON_METHODS = new Set<string>([

@@ -1,8 +1,20 @@
+import {
+  type AskUserResult,
+  LEGACY_FACTORY_API_VERSION,
+  JSONRPC_VERSION as SDK_JSON_RPC_VERSION,
+} from '@factory/droid-sdk'
 import { describe, expect, it } from 'vitest'
 
-import type { LiveSessionEventRecord } from '../../../shared/ipc/contracts'
+import type {
+  LiveSessionAskUserAnswerRecord,
+  LiveSessionEventRecord,
+} from '../../../shared/ipc/contracts'
 import type { SessionEvent } from '../protocol/sessionEvents'
-import type { StreamJsonRpcTransport } from '../protocol/transport'
+import {
+  FACTORY_API_VERSION,
+  JSON_RPC_VERSION,
+  type StreamJsonRpcTransport,
+} from '../protocol/transport'
 
 type Assert<T extends true> = T
 type SharedStreamErrorEvent = Extract<LiveSessionEventRecord, { type: 'stream.error' }>
@@ -10,6 +22,7 @@ type SharedSettingsChangedEvent = Extract<
   LiveSessionEventRecord,
   { type: 'session.settingsChanged' }
 >
+type SdkAskUserAnswer = NonNullable<AskUserResult['answers']>[number]
 
 const VALID_SHARED_ERROR_EVENT = {
   type: 'stream.error',
@@ -44,6 +57,9 @@ type SharedContractsExposeSettingsPatch = Assert<
   } extends SharedSettingsChangedEvent
     ? true
     : false
+>
+type SharedAskUserAnswersFitSdkResponses = Assert<
+  LiveSessionAskUserAnswerRecord extends SdkAskUserAnswer ? true : false
 >
 
 describe('integration protocol types', () => {
@@ -81,6 +97,11 @@ describe('integration protocol types', () => {
     expect(transport.factoryApiVersion).toBe('1.0.0')
   })
 
+  it('reuses SDK JSON-RPC protocol constants to avoid drift', () => {
+    expect(JSON_RPC_VERSION).toBe(SDK_JSON_RPC_VERSION)
+    expect(FACTORY_API_VERSION).toBe(LEGACY_FACTORY_API_VERSION)
+  })
+
   it('keeps shared live-session events serializable across the preload boundary', () => {
     expect(VALID_SHARED_ERROR_EVENT).toMatchObject({
       type: 'stream.error',
@@ -96,6 +117,7 @@ describe('integration protocol types', () => {
     expect(INVALID_SHARED_ERROR_EVENT.type).toBe('stream.error')
     expectTypeAlias<SharedContractsCarrySerializedStreamErrors>()
     expectTypeAlias<SharedContractsExposeSettingsPatch>()
+    expectTypeAlias<SharedAskUserAnswersFitSdkResponses>()
   })
 })
 
