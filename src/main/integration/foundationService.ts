@@ -34,6 +34,7 @@ import type {
   SessionTranscript,
   SyncMetadataRecord,
 } from '../../shared/ipc/contracts'
+import type { PluginRegistry } from '../app/PluginRegistry'
 import { createBackgroundArtifactScanner } from './artifacts/backgroundScanner'
 import { createEnvironmentDaemonAuthProvider, type DaemonAuthProvider } from './daemon/auth'
 import { createDaemonSessionControl } from './daemon/sessionControl'
@@ -41,7 +42,7 @@ import { createDaemonTransport, type DaemonTransport } from './daemon/transport'
 import { type CreateDatabaseServiceOptions, createDatabaseService } from './database/service'
 import { resolveDroidCliStatus } from './droid/resolveDroidCliStatus'
 import { DroidSdkDaemonSessionTransport } from './droidSdk/daemonTransport'
-import type { DroidSdkProcessTransportConfig } from './droidSdk/factory'
+import type { DroidSdkMcpServerFactory, DroidSdkProcessTransportConfig } from './droidSdk/factory'
 import { DroidSdkSessionTransport } from './droidSdk/transport'
 import {
   createFoundationBootstrapState,
@@ -55,6 +56,11 @@ import { createFoundationChangeBroadcaster } from './foundation/changeBroadcaste
 import { createFoundationLiveSessionRuntime } from './foundation/liveSessionRuntime'
 import { createFoundationQueries } from './foundation/queries'
 import { createFoundationSessionCatalog } from './foundation/sessionCatalog'
+import {
+  createLocalPluginCapabilityProvider,
+  createOxoxCapabilityGatewayServer,
+} from './mcp/oxoxCapabilityGateway'
+import type { LocalPluginHostManager } from './plugins/localPluginHost'
 import { createLiveSessionSearchIndexScheduler } from './search/liveSessionSearchIndexScheduler'
 import { createSessionSearchService } from './search/sessionSearchService'
 import { createSessionProcessManager } from './sessions/processManager'
@@ -151,6 +157,7 @@ export interface FoundationService {
 
 export interface CreateFoundationSessionTransportFactoryOptions {
   authProvider: DaemonAuthProvider
+  createMcpServers?: DroidSdkMcpServerFactory
   daemonTransport: Pick<DaemonTransport, 'listSessions'>
   createDaemonSessionTransport?: (options: {
     authProvider: DaemonAuthProvider
@@ -164,6 +171,7 @@ export interface CreateFoundationSessionTransportFactoryOptions {
 
 export function createFoundationSessionTransportFactory({
   authProvider,
+  createMcpServers,
   daemonTransport,
   createDaemonSessionTransport = (options) => new DroidSdkDaemonSessionTransport(options),
   createProcessSessionTransport = (config) => new DroidSdkSessionTransport(config),
@@ -185,11 +193,21 @@ export function createFoundationSessionTransportFactory({
       })
     }
 
-    return createProcessSessionTransport(config)
+    return createProcessSessionTransport({
+      ...config,
+      ...(createMcpServers ? { createMcpServers } : {}),
+    })
   }
 }
 
-export function createFoundationService(options: CreateDatabaseServiceOptions): FoundationService {
+export interface CreateFoundationServiceOptions extends CreateDatabaseServiceOptions {
+  pluginHost?: Pick<LocalPluginHostManager, 'invokeCapability'>
+  pluginRegistry?: PluginRegistry
+}
+
+export function createFoundationService(
+  options: CreateFoundationServiceOptions,
+): FoundationService {
   const foundationUpdateListeners = new Set<(payload: FoundationChangedPayload) => void>()
   const emitPayload = (payload: FoundationChangedPayload): void => {
     for (const listener of foundationUpdateListeners) {
@@ -229,11 +247,27 @@ export function createFoundationService(options: CreateDatabaseServiceOptions): 
     },
   })
   readDaemonDefaultSettings = () => daemonTransport.getDefaultSettings()
+  const localPluginCapabilityProvider =
+    options.pluginRegistry && options.pluginHost
+      ? createLocalPluginCapabilityProvider({
+          pluginRegistry: options.pluginRegistry,
+          pluginHost: options.pluginHost,
+        })
+      : null
+  const createMcpServers: DroidSdkMcpServerFactory | undefined = localPluginCapabilityProvider
+    ? ({ getSessionId }) => [
+        createOxoxCapabilityGatewayServer({
+          provider: localPluginCapabilityProvider,
+          getSessionId,
+        }),
+      ]
+    : undefined
   const sessionProcessManager = createSessionProcessManager({
     database,
     droidPath: droidCliStatus.path ?? undefined,
     sessionTransportFactory: createFoundationSessionTransportFactory({
       authProvider: daemonAuthProvider,
+      createMcpServers,
       daemonTransport,
     }),
   })

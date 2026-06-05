@@ -7,9 +7,17 @@ import {
   type DroidClientTransport,
   ProcessTransport,
   type ProcessTransportOptions,
+  type SdkMcpServer,
 } from '@factory/droid-sdk'
 
+export interface DroidSdkMcpServerFactoryContext {
+  getSessionId: () => string | null
+}
+
+export type DroidSdkMcpServerFactory = (context: DroidSdkMcpServerFactoryContext) => SdkMcpServer[]
+
 export interface DroidSdkProcessTransportConfig {
+  createMcpServers?: DroidSdkMcpServerFactory
   cwd?: string
   droidPath?: string
   homeDirectory?: string

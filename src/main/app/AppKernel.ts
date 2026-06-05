@@ -21,7 +21,11 @@ const EMPTY_PLUGIN_LOAD_REPORT: PluginLoadReport = {
 
 export interface AppKernelOptions {
   userDataPath: string
-  createFoundationService: (options: { userDataPath: string }) => FoundationService
+  createFoundationService: (options: {
+    pluginHost: Pick<LocalPluginHostManager, 'invokeCapability'>
+    pluginRegistry: PluginRegistry
+    userDataPath: string
+  }) => FoundationService
   registerSecurityHeaders: () => void
   registerIpcHandlers: (service: FoundationService) => Cleanup
   installSystemIntegration: (service: FoundationService) => Cleanup
@@ -57,6 +61,8 @@ export class AppKernel {
     }
 
     const foundationService = this.options.createFoundationService({
+      pluginHost: this.pluginHost,
+      pluginRegistry: this.pluginRegistry,
       userDataPath: this.options.userDataPath,
     })
 

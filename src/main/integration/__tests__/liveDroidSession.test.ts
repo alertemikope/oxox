@@ -1,5 +1,5 @@
 import { type DroidClient, SDK_TAG } from '@factory/droid-sdk'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { createOxoxLiveDroidSession, loadOxoxLiveDroidSession } from '../droidSdk/liveDroidSession'
 
@@ -126,5 +126,50 @@ describe('OxoxLiveDroidSession', () => {
       cwd: '/tmp/project',
     })
     expect(client.loadSessionCalls).toEqual([{ sessionId: 'session-existing' }])
+  })
+
+  it('applies lifecycle hook params and closes lifecycle resources with the live session', async () => {
+    const client = new FakeDroidClient()
+    const cleanup = vi.fn().mockResolvedValue(undefined)
+    const prepareInitialize = vi.fn().mockResolvedValue({
+      cleanup,
+      params: {
+        workspaceId: 'workspace-1',
+      },
+    })
+
+    const session = await createOxoxLiveDroidSession(
+      client as unknown as DroidClient,
+      {
+        cwd: '/tmp/project',
+        settings: {
+          modelId: 'gpt-5.4',
+        },
+      },
+      {
+        lifecycleHooks: [
+          {
+            prepareInitialize,
+          },
+        ],
+      },
+    )
+
+    expect(prepareInitialize).toHaveBeenCalledWith({
+      getSessionId: expect.any(Function),
+      request: {
+        cwd: '/tmp/project',
+        settings: {
+          modelId: 'gpt-5.4',
+        },
+      },
+    })
+    expect(client.initializeSessionCalls[0]).toMatchObject({
+      workspaceId: 'workspace-1',
+    })
+
+    await session.close()
+
+    expect(cleanup).toHaveBeenCalledTimes(1)
   })
 })

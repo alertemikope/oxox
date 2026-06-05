@@ -24,7 +24,7 @@ import type {
   LiveSessionSkillInfo,
   LiveSessionToolInfo,
 } from '../../../shared/ipc/contracts'
-
+import { createSessionScopedMcpServersLifecycleHook } from '../mcp/sessionScopedMcpServers'
 import type {
   InitializeSessionRequest,
   LiveSessionCompactResult,
@@ -170,6 +170,7 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
     }
   >()
   private readonly ready: Promise<void>
+  private readonly createMcpServers: DroidSdkProcessTransportConfig['createMcpServers']
 
   private currentSessionId: string | null
   private liveSession: OxoxLiveDroidSession | null = null
@@ -182,6 +183,7 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
     sessionFactory: DroidSdkSessionFactory = createDroidSdkSessionFactory(),
   ) {
     this.currentSessionId = config.sessionId ?? null
+    this.createMcpServers = config.createMcpServers
     this.observedTransport = new ObservedDroidClientTransport(
       sessionFactory.createTransport(config),
     )
@@ -224,7 +226,9 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
     await this.ready
     const initRequest = normalizeInitializeSessionRequest(request)
 
-    this.liveSession = await createOxoxLiveDroidSession(this.client, initRequest)
+    this.liveSession = await createOxoxLiveDroidSession(this.client, initRequest, {
+      lifecycleHooks: this.createSessionLifecycleHooks(),
+    })
     const result = this.liveSession.initResult as StreamJsonRpcInitializeResult
 
     this.currentSessionId = result.sessionId
@@ -241,7 +245,9 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
   async loadSession(_requestId: RequestId, sessionId: string): Promise<StreamJsonRpcLoadResult> {
     await this.ready
 
-    this.liveSession = await loadOxoxLiveDroidSession(this.client, sessionId)
+    this.liveSession = await loadOxoxLiveDroidSession(this.client, sessionId, {
+      lifecycleHooks: this.createSessionLifecycleHooks(),
+    })
     const result = this.liveSession.initResult as StreamJsonRpcLoadResult
 
     this.currentSessionId = sessionId
@@ -527,6 +533,12 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
     }
 
     throw new Error('No active Droid session is available.')
+  }
+
+  private createSessionLifecycleHooks() {
+    return this.createMcpServers
+      ? [createSessionScopedMcpServersLifecycleHook(this.createMcpServers)]
+      : []
   }
 
   private captureServerRequestIds(message: object): void {

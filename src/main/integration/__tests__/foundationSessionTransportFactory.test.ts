@@ -36,11 +36,13 @@ describe('createFoundationSessionTransportFactory', () => {
     const processSessionTransport = createTransport('process')
     const createDaemonSessionTransport = vi.fn(() => daemonSessionTransport)
     const createProcessSessionTransport = vi.fn(() => processSessionTransport)
+    const createMcpServers = vi.fn(() => [])
     const factory = createFoundationSessionTransportFactory({
       authProvider: { getApiKey: () => 'factory-key' },
       daemonTransport,
       createDaemonSessionTransport,
       createProcessSessionTransport,
+      createMcpServers,
     })
 
     expect(factory({ sessionId: 'daemon-session-1', cwd: '/tmp/project' })).toBe(
@@ -54,6 +56,11 @@ describe('createFoundationSessionTransportFactory', () => {
       authProvider: { getApiKey: expect.any(Function) },
       cwd: '/tmp/project',
       sessionId: 'daemon-session-1',
+    })
+    expect(createProcessSessionTransport).toHaveBeenCalledWith({
+      cwd: '/tmp/project',
+      createMcpServers,
+      sessionId: 'local-session-1',
     })
   })
 })
