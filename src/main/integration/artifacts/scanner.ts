@@ -9,6 +9,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 
+import { listSessions as listSdkSessions } from '@factory/droid-sdk'
 import type { SessionRecord, SyncMetadataRecord } from '../../../shared/ipc/contracts'
 import type { ArtifactSessionUpsert, DatabaseService } from '../database/service'
 import {
@@ -26,6 +27,7 @@ import {
 const TRANSCRIPT_EXTENSION = '.jsonl'
 const SETTINGS_SUFFIX = '.settings.json'
 const UNREADABLE_SESSION_TITLE = 'Unreadable session'
+const DEFAULT_SDK_METADATA_LIMIT = 100
 
 type ArtifactFile = {
   bucketName: string | null
@@ -58,7 +60,29 @@ export interface ArtifactScanner {
 
 export interface CreateArtifactScannerOptions {
   database: DatabaseService
+  sdkListSessions?: SdkListSessions
+  sdkMetadataLimit?: number
   sessionsRoot: string
+}
+
+type SdkListSessions = (options: {
+  fetchOutsideCWD?: boolean
+  numSessions?: number
+  sessionsDir?: string
+}) => Promise<readonly SdkSessionMetadata[]>
+
+type SdkSessionMetadata = {
+  id: string
+  title?: string
+  sessionTitle?: string
+  owner?: string
+  messageCount?: number
+  modifiedTime?: Date | string
+  createdTime?: Date | string
+  isFavorite?: boolean
+  cwd?: string
+  decompSessionType?: string
+  decompMissionId?: string
 }
 
 type TrackedSyncMetadata = SyncMetadataRecord & {
@@ -85,6 +109,27 @@ type SessionSnapshot = {
 
 function isTranscriptFile(entry: Dirent): boolean {
   return entry.isFile() && entry.name.endsWith(TRANSCRIPT_EXTENSION)
+}
+
+async function readLatestSdkSessionMetadata(
+  options: CreateArtifactScannerOptions,
+): Promise<Map<string, SdkSessionMetadata>> {
+  const listSessions = options.sdkListSessions ?? listSdkSessions
+
+  try {
+    const sessions = await listSessions({
+      fetchOutsideCWD: true,
+      numSessions: options.sdkMetadataLimit ?? DEFAULT_SDK_METADATA_LIMIT,
+      sessionsDir: options.sessionsRoot,
+    })
+
+    return new Map(sessions.map((session) => [session.id, session]))
+  } catch (error) {
+    console.error('Failed to read SDK session metadata', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return new Map()
+  }
 }
 
 function listTranscriptArtifacts(sessionsRoot: string): ArtifactFile[] {
@@ -177,12 +222,16 @@ function isMissingPathError(error: unknown): boolean {
   )
 }
 
-function readSettings(options: CreateArtifactScannerOptions, file: ArtifactFile): SessionSettings {
+function readSettings(
+  options: CreateArtifactScannerOptions,
+  file: ArtifactFile,
+  loggedUnreadableSettingsPaths: Set<string>,
+): SessionSettings {
   const settingsPath = join(
     file.bucketName ? join(options.sessionsRoot, file.bucketName) : options.sessionsRoot,
     `${file.sessionId}${SETTINGS_SUFFIX}`,
   )
-  const settings = tryReadSettings(settingsPath)
+  const settings = tryReadSettings(settingsPath, loggedUnreadableSettingsPaths)
 
   return (
     settings ?? {
@@ -195,7 +244,10 @@ function readSettings(options: CreateArtifactScannerOptions, file: ArtifactFile)
   )
 }
 
-function tryReadSettings(filePath: string): SessionSettings | null {
+function tryReadSettings(
+  filePath: string,
+  loggedUnreadableSettingsPaths: Set<string>,
+): SessionSettings | null {
   try {
     const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>
     return {
@@ -209,10 +261,13 @@ function tryReadSettings(filePath: string): SessionSettings | null {
       return null
     }
 
-    console.error('Failed to read session settings artifact', {
-      error: error instanceof Error ? error.message : String(error),
-      filePath,
-    })
+    if (!loggedUnreadableSettingsPaths.has(filePath)) {
+      loggedUnreadableSettingsPaths.add(filePath)
+      console.error('Failed to read session settings artifact', {
+        error: error instanceof Error ? error.message : String(error),
+        filePath,
+      })
+    }
 
     return null
   }
@@ -272,6 +327,38 @@ function readDecompMetadata(settings: Record<string, unknown>): {
   }
 
   return { decompMissionId, decompSessionType }
+}
+
+function toOptionalNonNegativeInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : undefined
+}
+
+function applySdkMetadataToSnapshot(
+  snapshot: SessionSnapshot,
+  sdkMetadata: SdkSessionMetadata | undefined,
+): SessionSnapshot {
+  if (!sdkMetadata) {
+    return snapshot
+  }
+
+  return {
+    ...snapshot,
+    title:
+      firstDefinedString(sdkMetadata.sessionTitle, sdkMetadata.title, snapshot.title) ??
+      snapshot.title,
+    owner: firstDefinedString(sdkMetadata.owner, snapshot.owner) ?? null,
+    messageCount: toOptionalNonNegativeInteger(sdkMetadata.messageCount) ?? snapshot.messageCount,
+    isFavorite:
+      typeof sdkMetadata.isFavorite === 'boolean' ? sdkMetadata.isFavorite : snapshot.isFavorite,
+    projectWorkspacePath:
+      firstDefinedString(sdkMetadata.cwd, snapshot.projectWorkspacePath) ?? null,
+    decompSessionType:
+      firstDefinedString(sdkMetadata.decompSessionType, snapshot.decompSessionType) ?? null,
+    decompMissionId:
+      firstDefinedString(sdkMetadata.decompMissionId, snapshot.decompMissionId) ?? null,
+  }
 }
 
 function readFavorites(sessionsRoot: string): Set<string> {
@@ -452,6 +539,68 @@ function createUnreadableUpsert(
   }
 }
 
+function createSdkMetadataOverlayUpsert(
+  file: ArtifactFile,
+  tracked: TrackedSyncMetadata,
+  previousSession: SessionRecord,
+  sdkMetadata: SdkSessionMetadata | undefined,
+): ArtifactSessionUpsert | null {
+  if (!sdkMetadata) {
+    return null
+  }
+
+  const title =
+    firstDefinedString(sdkMetadata.sessionTitle, sdkMetadata.title, previousSession.title) ??
+    previousSession.title
+  const owner = firstDefinedString(sdkMetadata.owner, previousSession.owner) ?? null
+  const messageCount =
+    toOptionalNonNegativeInteger(sdkMetadata.messageCount) ?? previousSession.messageCount ?? 0
+  const isFavorite =
+    typeof sdkMetadata.isFavorite === 'boolean'
+      ? sdkMetadata.isFavorite
+      : Boolean(previousSession.isFavorite)
+  const projectWorkspacePath =
+    firstDefinedString(sdkMetadata.cwd, previousSession.projectWorkspacePath) ?? null
+  const decompSessionType =
+    firstDefinedString(sdkMetadata.decompSessionType, previousSession.decompSessionType) ?? null
+  const decompMissionId =
+    firstDefinedString(sdkMetadata.decompMissionId, previousSession.decompMissionId) ?? null
+
+  if (
+    title === previousSession.title &&
+    owner === (previousSession.owner ?? null) &&
+    messageCount === (previousSession.messageCount ?? 0) &&
+    isFavorite === Boolean(previousSession.isFavorite) &&
+    projectWorkspacePath === (previousSession.projectWorkspacePath ?? null) &&
+    decompSessionType === (previousSession.decompSessionType ?? null) &&
+    decompMissionId === (previousSession.decompMissionId ?? null)
+  ) {
+    return null
+  }
+
+  return {
+    sessionId: file.sessionId,
+    sourcePath: file.sourcePath,
+    projectWorkspacePath,
+    modelId: previousSession.modelId ?? null,
+    hasUserMessage: Boolean(previousSession.hasUserMessage),
+    owner,
+    messageCount,
+    isFavorite,
+    decompSessionType,
+    decompMissionId,
+    title,
+    status: previousSession.status,
+    transport: previousSession.transport ?? 'artifacts',
+    createdAt: previousSession.createdAt,
+    lastActivityAt: previousSession.lastActivityAt,
+    updatedAt: previousSession.updatedAt,
+    lastByteOffset: tracked.lastByteOffset,
+    lastMtimeMs: tracked.lastMtimeMs,
+    checksum: tracked.checksum,
+  }
+}
+
 function backfillSessionLineage(
   options: CreateArtifactScannerOptions,
   files: ArtifactFile[],
@@ -521,9 +670,12 @@ function isUserMessageRecord(payload: Record<string, unknown>): boolean {
 }
 
 export function createArtifactScanner(options: CreateArtifactScannerOptions): ArtifactScanner {
+  const loggedUnreadableSettingsPaths = new Set<string>()
+
   return {
     sync: async () => {
       const startedAt = Date.now()
+      const sdkMetadataBySessionId = await readLatestSdkSessionMetadata(options)
       const trackedByPath = new Map(
         options.database.listSyncMetadata().map((metadata) => [metadata.sourcePath, metadata]),
       )
@@ -534,7 +686,7 @@ export function createArtifactScanner(options: CreateArtifactScannerOptions): Ar
       const fileSettings = new Map<string, SessionSettings>()
       const currentFiles = dedupeTranscriptArtifacts(
         listTranscriptArtifacts(options.sessionsRoot).filter((file) => {
-          const settings = readSettings(options, file)
+          const settings = readSettings(options, file, loggedUnreadableSettingsPaths)
           fileSettings.set(file.sourcePath, settings)
           return !settings.archivedAt
         }),
@@ -562,11 +714,26 @@ export function createArtifactScanner(options: CreateArtifactScannerOptions): Ar
             currentChecksum,
           })
         ) {
+          if (tracked && previousSession) {
+            const overlay = createSdkMetadataOverlayUpsert(
+              file,
+              tracked,
+              previousSession,
+              sdkMetadataBySessionId.get(file.sessionId),
+            )
+
+            if (overlay) {
+              options.database.upsertArtifactSession(overlay)
+            }
+          }
+
           skippedCount += 1
           continue
         }
 
-        const settings = fileSettings.get(file.sourcePath) ?? readSettings(options, file)
+        const settings =
+          fileSettings.get(file.sourcePath) ??
+          readSettings(options, file, loggedUnreadableSettingsPaths)
 
         try {
           const isAppendOnlyUpdate = shouldUseAppendOnlyArtifactSync({
@@ -593,6 +760,10 @@ export function createArtifactScanner(options: CreateArtifactScannerOptions): Ar
                     fallbackTimestamp,
                     previousSession,
                   )
+            snapshot = applySdkMetadataToSnapshot(
+              snapshot,
+              sdkMetadataBySessionId.get(file.sessionId),
+            )
             lastByteOffset = startOffset + parsed.lastByteOffset
           } catch (error) {
             if (!(isAppendOnlyUpdate && previousSession)) {
@@ -607,6 +778,10 @@ export function createArtifactScanner(options: CreateArtifactScannerOptions): Ar
               favorites,
               fallbackTimestamp,
               previousSession,
+            )
+            snapshot = applySdkMetadataToSnapshot(
+              snapshot,
+              sdkMetadataBySessionId.get(file.sessionId),
             )
             lastByteOffset = parsed.lastByteOffset
           }

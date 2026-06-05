@@ -333,6 +333,149 @@ describe('artifact scanner', () => {
     ])
   })
 
+  it('overlays latest SDK session metadata for unchanged artifacts without reparsing transcripts', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'oxox-artifacts-'))
+    const sessionsRoot = join(root, 'sessions')
+    const userDataPath = join(root, 'user-data')
+    cleanup.push(() => rmSync(root, { recursive: true, force: true }))
+
+    writeSessionArtifact({
+      sessionsRoot,
+      bucket: '-sdk-overlay-project',
+      sessionId: '39393939-3939-4939-8939-393939393939',
+      transcriptLines: [
+        JSON.stringify({
+          type: 'session_start',
+          timestamp: '2026-04-03T01:10:00.000Z',
+          id: '39393939-3939-4939-8939-393939393939',
+          title: 'Artifact title',
+          owner: 'artifact-owner',
+          cwd: '/tmp/artifact-project',
+        }),
+      ],
+    })
+
+    const database = createDatabaseService({
+      userDataPath,
+      databaseFactory: createNodeSqliteDatabaseFactory(),
+    })
+    cleanup.push(() => database.close())
+
+    const scanner = createArtifactScanner({
+      database,
+      sessionsRoot,
+    })
+
+    await expect(scanner.sync()).resolves.toMatchObject({
+      processedCount: 1,
+      skippedCount: 0,
+    })
+
+    const sdkListSessions = vi.fn().mockResolvedValue([
+      {
+        id: '39393939-3939-4939-8939-393939393939',
+        title: 'SDK raw title',
+        sessionTitle: 'SDK session title',
+        owner: 'sdk-owner',
+        messageCount: 42,
+        modifiedTime: new Date('2026-04-03T01:15:00.000Z'),
+        createdTime: new Date('2026-04-03T01:09:00.000Z'),
+        isFavorite: true,
+        cwd: '/tmp/sdk-project',
+        decompSessionType: 'worker',
+        decompMissionId: 'mission-sdk',
+      },
+    ])
+    const sdkScanner = createArtifactScanner({
+      database,
+      sessionsRoot,
+      sdkListSessions,
+      sdkMetadataLimit: 100,
+    })
+
+    await expect(sdkScanner.sync()).resolves.toMatchObject({
+      processedCount: 0,
+      skippedCount: 1,
+    })
+
+    expect(sdkListSessions).toHaveBeenCalledWith({
+      fetchOutsideCWD: true,
+      numSessions: 100,
+      sessionsDir: sessionsRoot,
+    })
+    expect(database.getSession('39393939-3939-4939-8939-393939393939')).toMatchObject({
+      title: 'SDK session title',
+      owner: 'sdk-owner',
+      messageCount: 42,
+      isFavorite: true,
+      projectWorkspacePath: '/tmp/sdk-project',
+      decompSessionType: 'worker',
+      decompMissionId: 'mission-sdk',
+    })
+  })
+
+  it('indexes sessions with malformed settings and logs each bad settings artifact once', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'oxox-artifacts-'))
+    const sessionsRoot = join(root, 'sessions')
+    const userDataPath = join(root, 'user-data')
+    cleanup.push(() => rmSync(root, { recursive: true, force: true }))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    cleanup.push(() => errorSpy.mockRestore())
+
+    const sessionId = '49494949-4949-4949-8949-494949494949'
+    writeSessionArtifact({
+      sessionsRoot,
+      bucket: '-malformed-settings-project',
+      sessionId,
+      transcriptLines: [
+        JSON.stringify({
+          type: 'session_start',
+          timestamp: '2026-04-03T01:10:00.000Z',
+          id: sessionId,
+          title: 'Readable transcript',
+          cwd: '/tmp/transcript-project',
+        }),
+      ],
+    })
+    const settingsPath = join(
+      sessionsRoot,
+      '-malformed-settings-project',
+      `${sessionId}.settings.json`,
+    )
+    writeFileSync(settingsPath, '{\n  "model": "custom:[OpenAI]-GPT-5.4-(High)-9",\n  "cwd": "')
+
+    const database = createDatabaseService({
+      userDataPath,
+      databaseFactory: createNodeSqliteDatabaseFactory(),
+    })
+    cleanup.push(() => database.close())
+
+    const scanner = createArtifactScanner({
+      database,
+      sessionsRoot,
+      sdkListSessions: vi.fn().mockResolvedValue([]),
+    })
+
+    await expect(scanner.sync()).resolves.toMatchObject({
+      processedCount: 1,
+      skippedCount: 0,
+    })
+    await expect(scanner.sync()).resolves.toMatchObject({
+      processedCount: 0,
+      skippedCount: 1,
+    })
+
+    expect(database.getSession(sessionId)).toMatchObject({
+      title: 'Readable transcript',
+      projectWorkspacePath: '/tmp/transcript-project',
+    })
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    expect(errorSpy).toHaveBeenCalledWith('Failed to read session settings artifact', {
+      error: expect.stringContaining('JSON'),
+      filePath: settingsPath,
+    })
+  })
+
   it('uses the newest duplicate artifact when the same session exists in root and project buckets', async () => {
     const root = mkdtempSync(join(tmpdir(), 'oxox-artifacts-'))
     const sessionsRoot = join(root, 'sessions')
