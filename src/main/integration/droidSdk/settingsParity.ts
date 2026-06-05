@@ -30,46 +30,17 @@ export interface DroidSdkSettingsParityEntry {
   notes: string
 }
 
-export const REQUIRED_DROID_SDK_SETTINGS_PARITY_FIELDS = [
-  'modelId',
-  'reasoningEffort',
-  'interactionMode',
-  'autonomyLevel',
-  'autonomyMode',
-  'specModeModelId',
-  'specModeReasoningEffort',
-  'enabledToolIds',
-  'disabledToolIds',
-  'mcpServers',
-  'sessionSource',
-  'sessionLocation',
-  'sessionOriginHint',
-  'tags',
-  'decompSessionType',
-  'decompMissionId',
-  'skipPermissionsUnsafe',
-  'missionSettings',
-  'worktree',
-  'worktreeDir',
-  'compactionTokenLimit',
-  'compactionThresholdCheckEnabled',
-  'compactionModel',
-  'compactionTokenLimitPerModel',
-  'runInWorktree',
-  'worktreeDirectory',
-  'subagentModelSettings',
-  'missionModelSettings',
-  'missionOrchestratorModel',
-  'missionOrchestratorReasoningEffort',
-  'providerLock',
-  'providerLockTimestamp',
-  'apiProviderLock',
-  'assistantActiveTimeMs',
-  'tokenUsage',
-  'inclusiveTokenUsage',
-  'childInclusiveTokenUsageBySessionId',
-  'archivedAt',
-  'effectiveFactoryRouterModel',
+export const DROID_SDK_SETTINGS_PARITY_IGNORED_FIELDS = [
+  'availableModels',
+  'cwd',
+  'machineId',
+  'management',
+  'maxAutonomyLevel',
+  'mcpOAuthCallbackUri',
+  'resolutionChain',
+  'sessionId',
+  'specSavePresets',
+  'workspaceId',
 ] as const
 
 const baseSdk = {
@@ -403,6 +374,18 @@ export const DROID_SDK_SETTINGS_PARITY_MATRIX = [
     notes: 'Daemon default settings feed OXOX bootstrap and the Settings UI surfaces them.',
   }),
   matrixEntry({
+    field: 'compactionModelMode',
+    sdk: { init: false, update: false, defaults: true, persisted: false },
+    oxox: {
+      ...allMissing,
+      init: 'not-applicable',
+      update: 'not-applicable',
+    },
+    status: 'internal-only',
+    notes:
+      'Deprecated daemon default-settings wire alias retained by Droid; OXOX uses compactionModel instead.',
+  }),
+  matrixEntry({
     field: 'compactionTokenLimitPerModel',
     sdk: { init: false, update: false, defaults: true, persisted: false },
     oxox: {
@@ -441,6 +424,18 @@ export const DROID_SDK_SETTINGS_PARITY_MATRIX = [
     },
     status: 'product-relevant-missing',
     notes: 'Daemon default settings feed OXOX bootstrap; worktree UI is deferred.',
+  }),
+  matrixEntry({
+    field: 'specSaveDir',
+    sdk: { init: false, update: false, defaults: true, persisted: false },
+    oxox: {
+      ...allMissing,
+      init: 'not-applicable',
+      update: 'not-applicable',
+    },
+    status: 'product-relevant-missing',
+    notes:
+      'Droid exposes this through daemon default settings, but OXOX does not yet parse or surface spec save directory preferences.',
   }),
   matrixEntry({
     field: 'subagentModelSettings',
