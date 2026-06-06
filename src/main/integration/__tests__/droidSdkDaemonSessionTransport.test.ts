@@ -426,4 +426,51 @@ describe('DroidSdkDaemonSessionTransport', () => {
       ]),
     )
   })
+
+  it('uses SDK daemon protocol methods for queued-message resolution and cache warmup', async () => {
+    const socketTransport = new FakeDaemonWebSocketTransport()
+    const daemonClient = new FakeDaemonClient()
+    const methods = protocol.daemon.DaemonDroidMethod
+    socketTransport.rpcResults.set(methods.RESOLVE_QUEUED_USER_MESSAGE, {})
+    socketTransport.rpcResults.set(methods.WARMUP_CACHE, {})
+    const transport = new DroidSdkDaemonSessionTransport({
+      authProvider: { getApiKey: () => 'factory-key' },
+      createDaemonClient: () => daemonClient,
+      createWebSocketTransport: () => socketTransport,
+      ensureLocalDaemon: async () => ({ port: 37_643 }),
+      resolveWebSocketUrl: () => 'ws://127.0.0.1:37643',
+      authenticateConnection: async () => undefined,
+    }) as StreamJsonRpcProcessTransportLike
+
+    await transport.loadSession('request-1', 'daemon-session-1')
+
+    await requireTransportMethod(transport, 'resolveQueuedUserMessage').call(
+      transport,
+      'request-2',
+      {
+        requestId: 'queued-user-message-1',
+        action: 'update_queue',
+        queuePlacement: 'end_of_loop',
+      },
+    )
+    await requireTransportMethod(transport, 'warmupCache').call(transport, 'request-3')
+
+    expect(socketTransport.sentMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          method: methods.RESOLVE_QUEUED_USER_MESSAGE,
+          params: {
+            sessionId: 'daemon-session-1',
+            requestId: 'queued-user-message-1',
+            action: 'update_queue',
+            queuePlacement: 'end_of_loop',
+          },
+        }),
+        expect.objectContaining({
+          method: methods.WARMUP_CACHE,
+          params: { sessionId: 'daemon-session-1' },
+        }),
+      ]),
+    )
+  })
 })

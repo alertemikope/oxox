@@ -43,6 +43,7 @@ import type {
   LiveSessionCompactResult,
   LiveSessionExecuteRewindParams,
   LiveSessionExecuteRewindResult,
+  LiveSessionQueuedUserMessageResolution,
   LiveSessionRewindInfo,
   LiveSessionSettings,
   RequestId,
@@ -609,6 +610,30 @@ export class DroidSdkDaemonSessionTransport implements StreamJsonRpcProcessTrans
       toolName,
       enabled,
     })
+  }
+
+  async resolveQueuedUserMessage(
+    _requestId: RequestId,
+    resolution: LiveSessionQueuedUserMessageResolution,
+  ): Promise<void> {
+    await this.client
+    await this.daemonRpc.request(
+      DAEMON_METHOD.RESOLVE_QUEUED_USER_MESSAGE,
+      protocol.daemon.DaemonResolveQueuedUserMessageRequestParamsSchema.parse({
+        ...resolution,
+        sessionId: this.requireSessionId(),
+      }),
+    )
+  }
+
+  async warmupCache(_requestId: RequestId): Promise<void> {
+    await this.client
+    await this.daemonRpc.request(
+      DAEMON_METHOD.WARMUP_CACHE,
+      protocol.daemon.DaemonWarmupCacheRequestParamsSchema.parse({
+        sessionId: this.requireSessionId(),
+      }),
+    )
   }
 
   async killWorkerSession(_requestId: RequestId, workerSessionId: string): Promise<void> {

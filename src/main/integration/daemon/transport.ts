@@ -69,6 +69,18 @@ type DaemonSearchFilesResult = ReturnType<
 type DaemonGetDefaultSettingsResult = ReturnType<
   (typeof protocol.daemon.DaemonGetDefaultSettingsResultSchema)['parse']
 >
+type DaemonGetMcpConfigResult = ReturnType<
+  (typeof protocol.daemon.DaemonGetMcpConfigResultSchema)['parse']
+>
+type DaemonUpdateMcpConfigParams = ReturnType<
+  (typeof protocol.daemon.DaemonUpdateMcpConfigRequestParamsSchema)['parse']
+>
+type DaemonUpdateMcpConfigResult = ReturnType<
+  (typeof protocol.daemon.DaemonUpdateMcpConfigResultSchema)['parse']
+>
+type DaemonValidateWorkingDirectoryResult = ReturnType<
+  (typeof protocol.daemon.DaemonValidateWorkingDirectoryResultSchema)['parse']
+>
 
 type SchemaParser<TResult> = {
   parse: (value: unknown) => TResult
@@ -196,6 +208,11 @@ export interface DaemonTransport {
   listFiles: (params: DaemonListFilesParams) => Promise<DaemonListFilesResult>
   searchFiles: (params: DaemonSearchFilesParams) => Promise<DaemonSearchFilesResult>
   getDefaultSettings: () => Promise<DaemonGetDefaultSettingsResult>
+  getMcpConfig: () => Promise<DaemonGetMcpConfigResult>
+  updateMcpConfig: (params: DaemonUpdateMcpConfigParams) => Promise<DaemonUpdateMcpConfigResult>
+  validateWorkingDirectory: (
+    workingDirectory: string,
+  ) => Promise<DaemonValidateWorkingDirectoryResult>
   forkSession: (sessionId: string) => Promise<{ newSessionId: string }>
   renameSession: (sessionId: string, title: string) => Promise<{ success: true }>
 }
@@ -647,6 +664,35 @@ class ManagedDaemonTransport implements DaemonTransport {
       protocol.daemon.DaemonGetDefaultSettingsRequestParamsSchema,
       protocol.daemon.DaemonGetDefaultSettingsResultSchema,
       {},
+    )
+  }
+
+  async getMcpConfig(): Promise<DaemonGetMcpConfigResult> {
+    const connection = this.requireConnection()
+    this.assertMethodSupported(DAEMON_METHOD.GET_MCP_CONFIG)
+
+    const params = protocol.daemon.DaemonGetMcpConfigRequestSchema.shape.params.parse({})
+    const result = await connection.request(DAEMON_METHOD.GET_MCP_CONFIG, params)
+    return protocol.daemon.DaemonGetMcpConfigResultSchema.parse(result)
+  }
+
+  async updateMcpConfig(params: DaemonUpdateMcpConfigParams): Promise<DaemonUpdateMcpConfigResult> {
+    return this.requestSupportedDaemonMethod(
+      DAEMON_METHOD.UPDATE_MCP_CONFIG,
+      protocol.daemon.DaemonUpdateMcpConfigRequestParamsSchema,
+      protocol.daemon.DaemonUpdateMcpConfigResultSchema,
+      params,
+    )
+  }
+
+  async validateWorkingDirectory(
+    workingDirectory: string,
+  ): Promise<DaemonValidateWorkingDirectoryResult> {
+    return this.requestSupportedDaemonMethod(
+      DAEMON_METHOD.VALIDATE_WORKING_DIRECTORY,
+      protocol.daemon.DaemonValidateWorkingDirectoryRequestParamsSchema,
+      protocol.daemon.DaemonValidateWorkingDirectoryResultSchema,
+      { workingDirectory },
     )
   }
 

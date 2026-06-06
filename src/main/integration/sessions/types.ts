@@ -141,6 +141,17 @@ export interface LiveSessionNotificationSummary {
   completionCount: number
 }
 
+export type LiveSessionQueuedUserMessageResolution =
+  | {
+      requestId: string
+      action: 'update_queue'
+      queuePlacement: 'end_of_turn' | 'end_of_loop'
+    }
+  | {
+      requestId: string
+      action: 'delete'
+    }
+
 export interface CreateSessionRequest {
   cwd: string
   settings?: LiveSessionCreateSettings
@@ -262,6 +273,11 @@ export interface StreamJsonRpcProcessTransportLike {
     toolName: string,
     enabled: boolean,
   ): Promise<void>
+  resolveQueuedUserMessage?(
+    requestId: RequestId,
+    resolution: LiveSessionQueuedUserMessageResolution,
+  ): Promise<void>
+  warmupCache?(requestId: RequestId): Promise<void>
   killWorkerSession?(requestId: RequestId, workerSessionId: string): Promise<void>
   submitBugReport?(
     requestId: RequestId,

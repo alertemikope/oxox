@@ -806,6 +806,127 @@ describe('createDaemonTransport', () => {
     await transport.stop()
   })
 
+  it('sends SDK daemon utility requests for MCP config and working-directory validation', async () => {
+    const sockets: MockWebSocket[] = []
+    const daemonMethod = protocol.daemon.DaemonDroidMethod
+    const transport = createDaemonTransport({
+      authProvider: {
+        getApiKey: () => 'utility-key',
+      },
+      createWebSocket: (url) => {
+        const socket = new MockWebSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+      resolveCandidatePorts: async () => [37643],
+      reconnectBaseDelayMs: 1_000,
+      refreshIntervalMs: 60_000,
+    })
+
+    transport.start()
+    await flushMicrotasks()
+
+    sockets[0]?.open()
+    await flushMicrotasks()
+    const socket = getRequiredValue(sockets[0], 'Expected daemon socket')
+
+    socket.respond(getLastRequestId(socket), { userId: 'user-1', orgId: 'org-1' })
+    await flushMicrotasks()
+    socket.respond(getLastRequestId(socket), {
+      supportedMethods: [
+        daemonMethod.LIST_OPENED_SESSIONS,
+        daemonMethod.LIST_AVAILABLE_SESSIONS,
+        daemonMethod.GET_MCP_CONFIG,
+        daemonMethod.UPDATE_MCP_CONFIG,
+        daemonMethod.VALIDATE_WORKING_DIRECTORY,
+      ],
+      supportedNotifications: [],
+      sessions: [],
+    })
+    await flushMicrotasks()
+    socket.respond(getLastRequestId(socket), {
+      sessions: [],
+      hasMore: false,
+    })
+    await flushMicrotasks()
+
+    const mcpConfig = transport.getMcpConfig()
+    expect(JSON.parse(socket.sentPayloads.at(-1) ?? '{}')).toMatchObject({
+      method: daemonMethod.GET_MCP_CONFIG,
+      params: {},
+    })
+    socket.respond(getLastRequestId(socket), {
+      servers: [
+        {
+          name: 'linear',
+          config: { type: 'http', url: 'https://mcp.linear.app/mcp' },
+          source: 'user',
+          status: 'connected',
+        },
+      ],
+    })
+    await expect(mcpConfig).resolves.toEqual({
+      servers: [
+        {
+          name: 'linear',
+          config: { type: 'http', url: 'https://mcp.linear.app/mcp', disabled: false },
+          source: 'user',
+          status: 'connected',
+        },
+      ],
+    })
+
+    const updated = transport.updateMcpConfig({
+      action: 'add',
+      serverNames: ['linear'],
+      serverConfig: { type: 'http', url: 'https://mcp.linear.app/mcp' },
+    })
+    expect(JSON.parse(socket.sentPayloads.at(-1) ?? '{}')).toMatchObject({
+      method: daemonMethod.UPDATE_MCP_CONFIG,
+      params: {
+        action: 'add',
+        serverNames: ['linear'],
+        serverConfig: { type: 'http', url: 'https://mcp.linear.app/mcp' },
+      },
+    })
+    socket.respond(getLastRequestId(socket), {
+      success: true,
+      servers: [
+        {
+          name: 'linear',
+          config: { type: 'http', url: 'https://mcp.linear.app/mcp' },
+          source: 'user',
+        },
+      ],
+    })
+    await expect(updated).resolves.toEqual({
+      success: true,
+      servers: [
+        {
+          name: 'linear',
+          config: { type: 'http', url: 'https://mcp.linear.app/mcp', disabled: false },
+          source: 'user',
+        },
+      ],
+    })
+
+    const validated = transport.validateWorkingDirectory('/tmp/project')
+    expect(JSON.parse(socket.sentPayloads.at(-1) ?? '{}')).toMatchObject({
+      method: daemonMethod.VALIDATE_WORKING_DIRECTORY,
+      params: { workingDirectory: '/tmp/project' },
+    })
+    socket.respond(getLastRequestId(socket), {
+      isValid: true,
+      resolvedPath: '/private/tmp/project',
+    })
+    await expect(validated).resolves.toEqual({
+      isValid: true,
+      resolvedPath: '/private/tmp/project',
+    })
+
+    await transport.stop()
+  })
+
   it('sends SDK daemon catalog, history, search, archive, and file requests', async () => {
     const sockets: MockWebSocket[] = []
     const daemonMethod = protocol.daemon.DaemonDroidMethod
