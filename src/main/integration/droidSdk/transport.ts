@@ -230,6 +230,7 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
 
     this.liveSession = await createOxoxLiveDroidSession(this.client, initRequest, {
       lifecycleHooks: this.createSessionLifecycleHooks(),
+      onStreamError: (error) => this.handleStreamDrainError(error),
     })
     const result = this.liveSession.initResult as StreamJsonRpcInitializeResult
 
@@ -249,6 +250,7 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
 
     this.liveSession = await loadOxoxLiveDroidSession(this.client, sessionId, {
       lifecycleHooks: this.createSessionLifecycleHooks(),
+      onStreamError: (error) => this.handleStreamDrainError(error),
     })
     const result = this.liveSession.initResult as StreamJsonRpcLoadResult
 
@@ -530,7 +532,9 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
     }
 
     if (this.currentSessionId) {
-      this.liveSession = attachOxoxLiveDroidSession(this.client, this.currentSessionId)
+      this.liveSession = attachOxoxLiveDroidSession(this.client, this.currentSessionId, {
+        onStreamError: (error) => this.handleStreamDrainError(error),
+      })
       return this.liveSession
     }
 
@@ -716,6 +720,9 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
       return
     }
 
+    await this.cancelPendingRequests()
+    this.activeStreamStateTracker = null
+
     if (error instanceof ProcessExitError && error.exitCode === 0) {
       await this.emit({
         type: 'stream.completed',
@@ -725,6 +732,20 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
       return
     }
 
+    await this.emit({
+      type: 'stream.error',
+      sessionId: this.currentSessionId ?? undefined,
+      error,
+      recoverable: true,
+    })
+  }
+
+  private async handleStreamDrainError(error: Error): Promise<void> {
+    if (this.disposed) {
+      return
+    }
+
+    this.activeStreamStateTracker = null
     await this.emit({
       type: 'stream.error',
       sessionId: this.currentSessionId ?? undefined,
@@ -766,20 +787,38 @@ export class DroidSdkSessionTransport implements StreamJsonRpcProcessTransportLi
   }
 
   private async resolvePendingRequestsOnDispose(): Promise<void> {
+    await this.cancelPendingRequests()
+  }
+
+  private async cancelPendingRequests(): Promise<void> {
     this.permissionRequestIdQueue.length = 0
     this.askUserRequestIdQueue.length = 0
 
-    for (const [requestId, pending] of this.pendingPermissions) {
+    for (const [requestId, pending] of Array.from(this.pendingPermissions)) {
       pending.deferred.resolve('cancel')
       this.pendingPermissions.delete(requestId)
+      await this.emit({
+        type: 'permission.resolved',
+        sessionId: this.currentSessionId ?? undefined,
+        requestId,
+        toolUseIds: pending.toolUseIds,
+        selectedOption: 'cancel',
+      })
     }
 
-    for (const [requestId, pending] of this.pendingAskUser) {
+    for (const [requestId, pending] of Array.from(this.pendingAskUser)) {
       pending.deferred.resolve({
         cancelled: true,
         answers: [],
       })
       this.pendingAskUser.delete(requestId)
+      await this.emit({
+        type: 'askUser.resolved',
+        sessionId: this.currentSessionId ?? undefined,
+        requestId,
+        selectedOption: '',
+        answers: [],
+      })
     }
   }
 }

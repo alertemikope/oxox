@@ -7,6 +7,28 @@ import {
   OxoxLiveDroidSession,
 } from '../droidSdk/liveDroidSession'
 
+function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      if (predicate()) {
+        resolve()
+        return
+      }
+
+      if (Date.now() >= deadline) {
+        reject(new Error(`timed out after ${timeoutMs}ms`))
+        return
+      }
+
+      setTimeout(tick, 10)
+    }
+
+    tick()
+  })
+}
+
 class FakeDroidClient {
   sessionId: string | null = null
 
@@ -109,6 +131,41 @@ describe('OxoxLiveDroidSession', () => {
       messageId: 'rewind-boundary-1',
       queuePlacement: 'end_of_turn',
     })
+  })
+
+  it('reports SDK stream drain errors to the session owner', async () => {
+    const streamError = new Error('SDK stream failed')
+    const client = {
+      addUserMessage: vi.fn(() => {
+        throw new Error('raw client send should not be used')
+      }),
+    }
+    const sdkSession = {
+      sessionId: 'session-1',
+      initResult: { session: { messages: [] } },
+      stream: vi.fn(() => ({
+        [Symbol.asyncIterator]: () => ({
+          next: async () => {
+            throw streamError
+          },
+        }),
+      })),
+    }
+    const onStreamError = vi.fn()
+    const session = new OxoxLiveDroidSession(
+      client as unknown as DroidClient,
+      sdkSession as never,
+      [],
+      { onStreamError },
+    )
+
+    await session.addUserMessage({
+      text: 'Continue from OXOX',
+      messageId: 'message-1',
+    })
+
+    await waitFor(() => onStreamError.mock.calls.length === 1)
+    expect(onStreamError).toHaveBeenCalledWith(streamError)
   })
 
   it('creates SDK DroidSession lifecycle while preserving OXOX add-user-message options', async () => {

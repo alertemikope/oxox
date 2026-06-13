@@ -515,7 +515,6 @@ describe('createSessionSearchService', () => {
     })
 
     await service.waitForHydration()
-
     expect(service.searchSessions({ query: 'content:first' }).matches[0]?.sessionId).toBe(
       'capped-session',
     )
@@ -523,6 +522,76 @@ describe('createSessionSearchService', () => {
       'capped-session',
     )
     expect(service.searchSessions({ query: 'content:third' }).matches).toEqual([])
+  })
+
+  it('matches free-text terms across separate fragments in the same session', async () => {
+    const service = createSessionSearchService({
+      bootstrap: createBootstrap([
+        createSession({
+          id: 'awesome-cli-session',
+          title: 'Release packaging work',
+          lastActivityAt: '2026-03-24T20:10:00.000Z',
+        }),
+      ]),
+      loadSessionTranscript: vi.fn(async (sessionId: string) =>
+        createTranscript(sessionId, [
+          {
+            kind: 'message',
+            id: 'message-cli',
+            occurredAt: null,
+            role: 'user',
+            markdown: 'Awesome CLI release and installer planning.',
+          },
+          {
+            kind: 'message',
+            id: 'message-windows',
+            occurredAt: null,
+            role: 'assistant',
+            markdown: 'Implemented the Windows distributable build and PowerShell install script.',
+          },
+        ]),
+      ),
+      backgroundHydrationDelayMs: 0,
+      hydrationYieldMs: 0,
+      maxIndexedContentChars: 20,
+    })
+
+    await service.waitForHydration()
+
+    expect(
+      service.searchSessions({ query: 'windows cli', limit: 80 }).matches.map((m) => m.sessionId),
+    ).toContain('awesome-cli-session')
+
+    service.dispose()
+  })
+
+  it('matches hyphenated query tokens against split words without weakening issue keys', async () => {
+    const service = createSessionSearchService({
+      bootstrap: createBootstrap([createSession({ id: 'split-awesome-cli-session' })]),
+      loadSessionTranscript: vi.fn(async (sessionId: string) =>
+        createTranscript(sessionId, [
+          {
+            kind: 'message',
+            id: 'message-1',
+            occurredAt: null,
+            role: 'assistant',
+            markdown: 'Awesome CLI Windows installer support shipped.',
+          },
+        ]),
+      ),
+      backgroundHydrationDelayMs: 0,
+      hydrationYieldMs: 0,
+    })
+
+    await service.waitForHydration()
+
+    expect(
+      service
+        .searchSessions({ query: 'awesome-cli windows', limit: 80 })
+        .matches.map((m) => m.sessionId),
+    ).toContain('split-awesome-cli-session')
+
+    service.dispose()
   })
 
   it('caps hydrated tool text before storing searchable document fields', async () => {

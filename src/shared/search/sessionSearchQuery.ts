@@ -25,6 +25,7 @@ export type ParsedSessionSearchQuery = {
   raw: string
   freeText: string
   terms: string[]
+  termGroups: string[][][]
   modifiers: Partial<Record<SessionSearchModifier, string[]>>
 }
 
@@ -100,6 +101,7 @@ export function parseSessionSearchQuery(raw: string): ParsedSessionSearchQuery {
     raw,
     freeText,
     terms: tokenizeSearchText(freeText),
+    termGroups: buildSearchTermGroups(freeText),
     modifiers,
   }
 }
@@ -113,6 +115,29 @@ export function tokenizeSearchText(value: string): string[] {
     .split(/[^a-z0-9_./:-]+/u)
     .map((token) => token.trim())
     .filter((token) => token.length > 0 && !SEARCH_STOP_WORDS.has(token))
+}
+
+function buildSearchTermGroups(value: string): string[][][] {
+  return tokenizeSearchText(value).map((term) => {
+    const splitVariant = splitHyphenatedSearchTerm(term)
+
+    return splitVariant.length > 1 ? [[term], splitVariant] : [[term]]
+  })
+}
+
+function splitHyphenatedSearchTerm(term: string): string[] {
+  if (!term.includes('-') || isIssueKeyTerm(term)) {
+    return []
+  }
+
+  return term
+    .split(/-+/u)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0 && !SEARCH_STOP_WORDS.has(part))
+}
+
+function isIssueKeyTerm(term: string): boolean {
+  return /^[a-z][a-z0-9]+-\d+$/u.test(term)
 }
 
 function readModifierValue(raw: string, cursor: number): { value: string; nextCursor: number } {

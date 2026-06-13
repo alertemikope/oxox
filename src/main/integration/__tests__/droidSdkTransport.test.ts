@@ -31,6 +31,15 @@ function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
   })
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs = 100): Promise<T | '__timeout__'> {
+  return Promise.race([
+    promise,
+    new Promise<'__timeout__'>((resolve) => {
+      setTimeout(() => resolve('__timeout__'), timeoutMs)
+    }),
+  ])
+}
+
 class FakeDroidClientTransport implements DroidClientTransport {
   readonly childProcess = {
     pid: 4_321,
@@ -874,6 +883,119 @@ describe('DroidSdkSessionTransport', () => {
         recoverable: true,
       }),
     ])
+  })
+
+  it('cancels pending permission requests when the local exec transport fails', async () => {
+    const transport = new FakeDroidClientTransport()
+    const client = new FakeDroidClient()
+    const sessionTransport = new DroidSdkSessionTransport(
+      {
+        cwd: '/tmp/session-1',
+        droidPath: '/opt/factory/bin/droid',
+        sessionId: 'session-1',
+      },
+      createSessionFactory(transport, client),
+    )
+
+    const events: Array<{ type: string }> = []
+    sessionTransport.subscribe((event) => {
+      events.push(event as { type: string })
+    })
+
+    const resolutionPromise = client.requestPermission(
+      'permission-pending',
+      {
+        toolUses: [
+          {
+            toolUse: {
+              id: 'tool-1',
+              name: 'Execute',
+            },
+          },
+        ],
+        options: [
+          { label: 'Approve', value: 'proceed_once' },
+          { label: 'Deny', value: 'cancel' },
+        ],
+      },
+      transport,
+    )
+
+    await waitFor(() => events.some((event) => event.type === 'permission.requested'))
+
+    transport.emitError(new ProcessExitError('Droid process exited unexpectedly', { exitCode: 17 }))
+
+    await expect(withTimeout(resolutionPromise)).resolves.toBe('cancel')
+    await waitFor(() => events.some((event) => event.type === 'stream.error'))
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'permission.resolved',
+          requestId: 'permission-pending',
+          selectedOption: 'cancel',
+        }),
+        expect.objectContaining({
+          type: 'stream.error',
+          recoverable: true,
+        }),
+      ]),
+    )
+  })
+
+  it('cancels pending ask-user requests when the local exec transport fails', async () => {
+    const transport = new FakeDroidClientTransport()
+    const client = new FakeDroidClient()
+    const sessionTransport = new DroidSdkSessionTransport(
+      {
+        cwd: '/tmp/session-1',
+        droidPath: '/opt/factory/bin/droid',
+        sessionId: 'session-1',
+      },
+      createSessionFactory(transport, client),
+    )
+
+    const events: Array<{ type: string }> = []
+    sessionTransport.subscribe((event) => {
+      events.push(event as { type: string })
+    })
+
+    const askUserPromise = client.askUser(
+      'ask-pending',
+      {
+        questions: [
+          {
+            index: 0,
+            question: 'Which option?',
+            options: ['ALPHA', 'BETA'],
+          },
+        ],
+      },
+      transport,
+    )
+
+    await waitFor(() => events.some((event) => event.type === 'askUser.requested'))
+
+    transport.emitError(new ProcessExitError('Droid process exited unexpectedly', { exitCode: 17 }))
+
+    await expect(withTimeout(askUserPromise)).resolves.toEqual({
+      cancelled: true,
+      answers: [],
+    })
+    await waitFor(() => events.some((event) => event.type === 'stream.error'))
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'askUser.resolved',
+          requestId: 'ask-pending',
+          selectedOption: '',
+          answers: [],
+        }),
+        expect.objectContaining({
+          type: 'stream.error',
+          recoverable: true,
+        }),
+      ]),
+    )
   })
 
   it('emits a result event when the SDK stream returns to idle', async () => {

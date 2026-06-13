@@ -50,6 +50,7 @@ export interface OxoxLiveDroidSessionAddUserMessageRequest
 
 export interface OxoxLiveDroidSessionOptions {
   lifecycleHooks?: readonly OxoxLiveDroidSessionLifecycleHook[]
+  onStreamError?: (error: Error) => void | Promise<void>
 }
 
 export class OxoxLiveDroidSession {
@@ -57,6 +58,7 @@ export class OxoxLiveDroidSession {
     _client: DroidClient,
     private readonly sdkSession: DroidSession,
     private readonly lifecycleCleanups: Array<() => Promise<void>> = [],
+    private readonly options: OxoxLiveDroidSessionOptions = {},
   ) {}
 
   get sessionId(): string {
@@ -69,9 +71,16 @@ export class OxoxLiveDroidSession {
 
   async addUserMessage(request: OxoxLiveDroidSessionAddUserMessageRequest): Promise<string> {
     const messageId = request.messageId ?? randomUUID()
-    void drainDroidSessionStream(
-      this.sdkSession.stream(request.text, createDroidSessionMessageOptions(request, messageId)),
-    ).catch(() => undefined)
+    try {
+      void drainDroidSessionStream(
+        this.sdkSession.stream(request.text, createDroidSessionMessageOptions(request, messageId)),
+      ).catch((error) => {
+        void this.reportStreamError(error)
+      })
+    } catch (error) {
+      await this.reportStreamError(error)
+      throw error
+    }
     return messageId
   }
 
@@ -150,6 +159,14 @@ export class OxoxLiveDroidSession {
   async renameSession(params: RenameSessionRequestParams): Promise<RenameSessionResult> {
     return this.sdkSession.renameSession(params)
   }
+
+  private async reportStreamError(error: unknown): Promise<void> {
+    if (!this.options.onStreamError) {
+      return
+    }
+
+    await this.options.onStreamError(normalizeError(error))
+  }
 }
 
 export async function createOxoxLiveDroidSession(
@@ -181,6 +198,7 @@ export async function createOxoxLiveDroidSession(
       client,
       new DroidSession(client, result.sessionId, result),
       lifecycle.cleanups,
+      options,
     )
   } catch (error) {
     await runOxoxLiveDroidSessionCleanups(lifecycle.cleanups)
@@ -207,6 +225,7 @@ export async function loadOxoxLiveDroidSession(
       client,
       new DroidSession(client, sessionId, result),
       lifecycle.cleanups,
+      options,
     )
   } catch (error) {
     await runOxoxLiveDroidSessionCleanups(lifecycle.cleanups)
@@ -217,12 +236,15 @@ export async function loadOxoxLiveDroidSession(
 export function attachOxoxLiveDroidSession(
   client: DroidClient,
   sessionId: string,
+  options: OxoxLiveDroidSessionOptions = {},
 ): OxoxLiveDroidSession {
   return new OxoxLiveDroidSession(
     client,
     new DroidSession(client, sessionId, {
       session: { messages: [] },
     }),
+    [],
+    options,
   )
 }
 
@@ -256,4 +278,8 @@ function createDroidSessionMessageOptions(
 async function drainDroidSessionStream(stream: AsyncIterable<unknown>): Promise<void> {
   for await (const _message of stream) {
   }
+}
+
+function normalizeError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
 }

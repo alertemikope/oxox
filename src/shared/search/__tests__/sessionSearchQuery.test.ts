@@ -8,7 +8,19 @@ describe('parseSessionSearchQuery', () => {
 
     expect(parsed.freeText).toBe('sdk auth flow')
     expect(parsed.terms).toEqual(['sdk', 'auth', 'flow'])
+    expect(parsed.termGroups).toEqual([[['sdk']], [['auth']], [['flow']]])
     expect(parsed.modifiers).toEqual({})
+  })
+
+  it('keeps issue-key tokens exact while allowing hyphenated product names to match split words', () => {
+    const parsed = parseSessionSearchQuery('awesome-cli windows OXO-59')
+
+    expect(parsed.terms).toEqual(['awesome-cli', 'windows', 'oxo-59'])
+    expect(parsed.termGroups).toEqual([
+      [['awesome-cli'], ['awesome', 'cli']],
+      [['windows']],
+      [['oxo-59']],
+    ])
   })
 
   it('extracts quoted and unquoted field modifiers', () => {

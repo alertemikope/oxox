@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -179,6 +179,94 @@ describe('session transcript service', () => {
         }),
       ],
     })
+  })
+
+  it('loads global Factory snapshot manifests with boundary file changes for search indexing', async () => {
+    const factoryHome = mkdtempSync(join(tmpdir(), 'oxox-factory-home-'))
+    const sessionDirectory = join(factoryHome, 'sessions', 'project-key')
+    const manifestDirectory = join(factoryHome, 'snapshots', 'manifests')
+    const filePath = join(sessionDirectory, 'session-global-snapshots.jsonl')
+
+    mkdirSync(sessionDirectory, { recursive: true })
+    mkdirSync(manifestDirectory, { recursive: true })
+    writeFileSync(
+      filePath,
+      JSON.stringify({
+        type: 'message',
+        id: 'message-1',
+        timestamp: '2026-03-25T01:00:00.000Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Ship Windows installer.' }],
+        },
+      }),
+      'utf8',
+    )
+    writeFileSync(
+      join(manifestDirectory, 'session-global-snapshots.snapshots.json'),
+      JSON.stringify({
+        sessionId: 'session-global-snapshots',
+        boundaries: [
+          {
+            messageId: 'message-1',
+            messageIndex: 4,
+            timestamp: 1_780_000_000_000,
+            files: [
+              {
+                filePath: '/tmp/awesome-cli/package.json',
+                contentHash: 'hash-package',
+                size: 123,
+                capturedAt: 1_780_000_000_010,
+                toolCallId: 'tool-package',
+              },
+            ],
+            creations: [
+              {
+                filePath: '/tmp/awesome-cli/scripts/install.ps1',
+                createdAt: 1_780_000_000_020,
+                toolCallId: 'tool-install',
+              },
+            ],
+            deletions: [
+              {
+                filePath: '/tmp/awesome-cli/old-installer.ps1',
+                deletedAt: 1_780_000_000_030,
+                toolCallId: 'tool-delete',
+              },
+            ],
+          },
+        ],
+      }),
+      'utf8',
+    )
+
+    const transcript = await loadSessionTranscriptFromFile('session-global-snapshots', filePath)
+
+    expect(transcript.snapshots).toEqual([
+      expect.objectContaining({
+        changeKind: 'snapshot',
+        contentHash: 'hash-package',
+        filePath: '/tmp/awesome-cli/package.json',
+        messageId: 'message-1',
+        messageIndex: 4,
+        sizeBytes: 123,
+        toolCallId: 'tool-package',
+      }),
+      expect.objectContaining({
+        changeKind: 'created',
+        filePath: '/tmp/awesome-cli/scripts/install.ps1',
+        messageId: 'message-1',
+        messageIndex: 4,
+        toolCallId: 'tool-install',
+      }),
+      expect.objectContaining({
+        changeKind: 'deleted',
+        filePath: '/tmp/awesome-cli/old-installer.ps1',
+        messageId: 'message-1',
+        messageIndex: 4,
+        toolCallId: 'tool-delete',
+      }),
+    ])
   })
 
   it('ignores malformed optional sidecars without losing transcript search data', async () => {

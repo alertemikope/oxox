@@ -30,7 +30,7 @@ import {
 } from './sessionFragmentIndex'
 
 const SEARCH_SOURCE_SCHEMA_VERSION = 1
-const SEARCH_DATABASE_SCHEMA_VERSION = 1
+const SEARCH_DATABASE_SCHEMA_VERSION = 2
 
 type SearchSessionTranscript = SessionTranscript & {
   settings?: SessionSettingsSearchSource | null
@@ -358,8 +358,13 @@ export function createSessionSearchService({
         score: rankFragment(fragment, parsed),
         reasons: buildFragmentReasons(fragment, parsed),
       }))
+    const sessionCoverageMatches = buildSessionCoverageMatches(parsed, fragmentsBySessionId)
 
-    const matches = mergeSearchMatches([...documentMatches, ...fragmentMatches])
+    const matches = mergeSearchMatches([
+      ...documentMatches,
+      ...fragmentMatches,
+      ...sessionCoverageMatches,
+    ])
       .filter((match) =>
         sessionMatchesQuery(
           match.sessionId,
@@ -1299,10 +1304,9 @@ function createSqliteSessionSearchStore(databasePath: string): SessionSearchStor
         .map(rowToSearchDocument)
     },
     searchFragments: (parsed) => {
-      const ftsQuery = buildFtsQuery(parsed)
       const fragments = new Map<string, SearchFragmentDocument>()
 
-      if (ftsQuery) {
+      for (const ftsQuery of buildFtsQueries(parsed)) {
         for (const fragment of database
           .prepare<SearchFragmentDocumentRow>(`
             SELECT
@@ -1589,19 +1593,25 @@ function buildSearchWhereClause(parsed: ParsedSessionSearchQuery): {
   const clauses: string[] = []
   const parameters: string[] = []
 
-  for (const term of parsed.terms) {
-    clauses.push(
-      [
-        'instr(title, ?) > 0',
-        'instr(content, ?) > 0',
-        'instr(project, ?) > 0',
-        'instr(path, ?) > 0',
-        'instr(tool, ?) > 0',
-        'instr(status, ?) > 0',
-        'instr(session_id, ?) > 0',
-      ].join(' OR '),
-    )
-    parameters.push(term, term, term, term, term, term, term)
+  for (const termGroup of searchTermGroups(parsed)) {
+    const variantClauses: string[] = []
+
+    for (const variant of termGroup) {
+      const termClauses: string[] = []
+
+      for (const term of variant) {
+        termClauses.push(buildSearchTermWhereClause())
+        parameters.push(term, term, term, term, term, term, term)
+      }
+
+      if (termClauses.length > 0) {
+        variantClauses.push(termClauses.map((clause) => `(${clause})`).join(' AND '))
+      }
+    }
+
+    if (variantClauses.length > 0) {
+      clauses.push(variantClauses.map((clause) => `(${clause})`).join(' OR '))
+    }
   }
 
   for (const [field, values] of Object.entries(parsed.modifiers)) {
@@ -1621,6 +1631,18 @@ function buildSearchWhereClause(parsed: ParsedSessionSearchQuery): {
     parameters,
     whereClause: clauses.map((clause) => `(${clause})`).join(' AND '),
   }
+}
+
+function buildSearchTermWhereClause(): string {
+  return [
+    'instr(title, ?) > 0',
+    'instr(content, ?) > 0',
+    'instr(project, ?) > 0',
+    'instr(path, ?) > 0',
+    'instr(tool, ?) > 0',
+    'instr(status, ?) > 0',
+    'instr(session_id, ?) > 0',
+  ].join(' OR ')
 }
 
 function sqlColumnForSearchField(field: SessionSearchModifier): string | null {
@@ -1700,8 +1722,19 @@ function rowToSearchFragmentDocument(row: SearchFragmentDocumentRow): SearchFrag
   }
 }
 
-function buildFtsQuery(parsed: ParsedSessionSearchQuery): string {
-  return [...parsed.terms, ...Object.values(parsed.modifiers).flatMap((values) => values ?? [])]
+function buildFtsQueries(parsed: ParsedSessionSearchQuery): string[] {
+  const modifierTerms = Object.values(parsed.modifiers).flatMap((values) => values ?? [])
+  const preferredTerms = preferredSearchTerms(parsed)
+  const queries = [
+    buildFtsQuery([...preferredTerms, ...modifierTerms]),
+    ...searchTermGroups(parsed).map((group) => buildFtsQuery(preferredSearchVariant(group))),
+  ]
+
+  return [...new Set(queries.filter(Boolean))]
+}
+
+function buildFtsQuery(terms: string[]): string {
+  return terms
     .filter(Boolean)
     .map((term) => `"${term.replaceAll('"', '""')}"`)
     .join(' ')
@@ -1709,7 +1742,7 @@ function buildFtsQuery(parsed: ParsedSessionSearchQuery): string {
 
 function buildPathFacetQueries(parsed: ParsedSessionSearchQuery): string[] {
   return [
-    ...parsed.terms.filter(isPathLikeQuery),
+    ...preferredSearchTerms(parsed).filter(isPathLikeQuery),
     ...(parsed.modifiers.path ?? []),
     ...(parsed.modifiers.file ?? []),
     ...(parsed.modifiers.extension ?? []),
@@ -1730,6 +1763,24 @@ function buildEntityFacetQueries(parsed: ParsedSessionSearchQuery): Array<{
     ...parsed.terms.filter(isIssueKeyQuery).map((value) => ({ kind: 'issue_key', value })),
     ...parsed.terms.filter(isPathLikeQuery).map((value) => ({ kind: 'file_path', value })),
   ]
+}
+
+function searchTermGroups(parsed: ParsedSessionSearchQuery): string[][][] {
+  return parsed.termGroups.length > 0 ? parsed.termGroups : parsed.terms.map((term) => [[term]])
+}
+
+function preferredSearchTerms(parsed: ParsedSessionSearchQuery): string[] {
+  return searchTermGroups(parsed).flatMap(preferredSearchVariant)
+}
+
+function reasonSearchTerms(parsed: ParsedSessionSearchQuery): string[] {
+  return [...new Set([...parsed.terms, ...preferredSearchTerms(parsed)])]
+}
+
+function preferredSearchVariant(group: string[][]): string[] {
+  return (
+    group.find((variant) => variant.length > 1) ?? group.find((variant) => variant.length > 0) ?? []
+  )
 }
 
 function buildDirectFragmentFacetQueries(parsed: ParsedSessionSearchQuery): Array<{
@@ -1943,8 +1994,14 @@ function serializeLiveEventToolContent(event: LiveSessionEventRecord): string {
 
 function documentMatchesQuery(document: SearchDocument, parsed: ParsedSessionSearchQuery): boolean {
   return (
-    parsed.terms.every((term) => termMatchesAnySearchableField(document, term)) &&
+    searchTermGroups(parsed).every((group) => searchTermGroupMatchesDocument(document, group)) &&
     modifierMatches(document, parsed.modifiers)
+  )
+}
+
+function searchTermGroupMatchesDocument(document: SearchDocument, group: string[][]): boolean {
+  return group.some((variant) =>
+    variant.every((term) => termMatchesAnySearchableField(document, term)),
   )
 }
 
@@ -2036,7 +2093,7 @@ function fragmentMatchesQuery(
   )
 
   return (
-    parsed.terms.every((term) => termMatchesAnyFragmentField(fragment, term)) &&
+    searchTermGroups(parsed).every((group) => searchTermGroupMatchesFragment(fragment, group)) &&
     directEntries.every(([field, values]) =>
       (values ?? []).every((value) =>
         getFragmentFieldValue(fragment, field as SessionSearchModifier).includes(value),
@@ -2048,6 +2105,15 @@ function fragmentMatchesQuery(
           getFragmentFacetValue(fragment, field as SessionSearchModifier).includes(value),
         ),
       ))
+  )
+}
+
+function searchTermGroupMatchesFragment(
+  fragment: SearchFragmentDocument,
+  group: string[][],
+): boolean {
+  return group.some((variant) =>
+    variant.every((term) => termMatchesAnyFragmentField(fragment, term)),
   )
 }
 
@@ -2138,8 +2204,8 @@ function getFragmentFacetValue(
 }
 
 function rankFragment(fragment: SearchFragmentDocument, parsed: ParsedSessionSearchQuery): number {
-  const freeTextScore = parsed.terms.reduce(
-    (total, term) => total + rankTermAcrossFragmentFields(fragment, term),
+  const freeTextScore = searchTermGroups(parsed).reduce(
+    (total, group) => total + rankTermGroupAcrossFragmentFields(fragment, group),
     0,
   )
   const modifierScore = Object.entries(parsed.modifiers).reduce((total, [field, values]) => {
@@ -2156,6 +2222,17 @@ function rankFragment(fragment: SearchFragmentDocument, parsed: ParsedSessionSea
   }, 0)
 
   return Math.round((freeTextScore + modifierScore + 1_000) * fragment.rankBoost)
+}
+
+function rankTermGroupAcrossFragmentFields(
+  fragment: SearchFragmentDocument,
+  group: string[][],
+): number {
+  return Math.max(
+    ...group.map((variant) =>
+      variant.reduce((total, term) => total + rankTermAcrossFragmentFields(fragment, term), 0),
+    ),
+  )
 }
 
 function rankTermAcrossFragmentFields(fragment: SearchFragmentDocument, term: string): number {
@@ -2234,8 +2311,8 @@ function termMatchesAnySearchableField(document: SearchDocument, term: string): 
 }
 
 function rankDocument(document: SearchDocument, parsed: ParsedSessionSearchQuery): number {
-  const freeTextScore = parsed.terms.reduce(
-    (total, term) => total + rankTermAcrossFields(document, term),
+  const freeTextScore = searchTermGroups(parsed).reduce(
+    (total, group) => total + rankTermGroupAcrossFields(document, group),
     0,
   )
   const modifierScore = Object.entries(parsed.modifiers).reduce((total, [field, values]) => {
@@ -2252,6 +2329,14 @@ function rankDocument(document: SearchDocument, parsed: ParsedSessionSearchQuery
   }, 0)
 
   return freeTextScore + modifierScore
+}
+
+function rankTermGroupAcrossFields(document: SearchDocument, group: string[][]): number {
+  return Math.max(
+    ...group.map((variant) =>
+      variant.reduce((total, term) => total + rankTermAcrossFields(document, term), 0),
+    ),
+  )
 }
 
 function rankTermAcrossFields(document: SearchDocument, term: string): number {
@@ -2366,7 +2451,10 @@ function buildReasons(
     'status',
     'id',
   ]
-  const terms = [...parsed.terms, ...Object.values(parsed.modifiers).flat()]
+  const terms = [
+    ...reasonSearchTerms(parsed),
+    ...Object.values(parsed.modifiers).flatMap((values) => values ?? []),
+  ]
 
   for (const term of terms) {
     const matchingField = fields.find((field) => getFieldValue(document, field).includes(term))
@@ -2410,7 +2498,10 @@ function buildFragmentReasons(
     'title',
   ]
   const terms = [
-    ...parsed.terms.map((term) => ({ term, preferredField: null as SessionSearchModifier | null })),
+    ...reasonSearchTerms(parsed).map((term) => ({
+      term,
+      preferredField: null as SessionSearchModifier | null,
+    })),
     ...Object.entries(parsed.modifiers).flatMap(([field, values]) =>
       (values ?? []).map((term) => ({
         term,
@@ -2444,6 +2535,144 @@ function buildFragmentReasons(
   }
 
   return reasons
+}
+
+function buildSessionCoverageMatches(
+  parsed: ParsedSessionSearchQuery,
+  fragmentsBySessionId: Map<string, SearchFragmentDocument[]>,
+): SessionSearchMatch[] {
+  const groups = searchTermGroups(parsed)
+
+  if (groups.length < 2) {
+    return []
+  }
+
+  const matches: SessionSearchMatch[] = []
+
+  for (const [sessionId, fragments] of fragmentsBySessionId.entries()) {
+    const evidence = groups.map((group) => findBestFragmentForSearchTermGroup(fragments, group))
+
+    if (evidence.some((item) => !item)) {
+      continue
+    }
+
+    const evidenceFragments = evidence.filter((item): item is SearchFragmentDocument =>
+      Boolean(item),
+    )
+    const distinctSourceCount = new Set(
+      evidenceFragments.map((fragment) => `${fragment.sourceKind}:${fragment.sourceId}`),
+    ).size
+
+    matches.push({
+      sessionId,
+      score:
+        20_000 +
+        distinctSourceCount * 750 +
+        evidenceFragments.reduce(
+          (total, fragment, index) =>
+            total + rankTermGroupAcrossFragmentFields(fragment, groups[index] ?? []),
+          0,
+        ),
+      reasons: buildSessionCoverageReasons(evidenceFragments, groups),
+    })
+  }
+
+  return matches
+}
+
+function findBestFragmentForSearchTermGroup(
+  fragments: SearchFragmentDocument[],
+  group: string[][],
+): SearchFragmentDocument | null {
+  let bestFragment: SearchFragmentDocument | null = null
+  let bestScore = 0
+
+  for (const fragment of fragments) {
+    if (!searchTermGroupMatchesFragment(fragment, group)) {
+      continue
+    }
+
+    const score = rankTermGroupAcrossFragmentFields(fragment, group)
+
+    if (!bestFragment || score > bestScore) {
+      bestFragment = fragment
+      bestScore = score
+    }
+  }
+
+  return bestFragment
+}
+
+function buildSessionCoverageReasons(
+  fragments: SearchFragmentDocument[],
+  groups: string[][][],
+): SessionSearchMatch['reasons'] {
+  const reasons: SessionSearchMatch['reasons'] = []
+
+  for (const [index, fragment] of fragments.entries()) {
+    const term = findMatchedReasonTerm(fragment, groups[index] ?? [])
+
+    if (!term) {
+      continue
+    }
+
+    const field = findFragmentReasonField(fragment, term)
+
+    if (!field) {
+      continue
+    }
+
+    reasons.push({
+      field,
+      messageId: fragment.messageId,
+      snippet: createSnippet(getFragmentFieldValue(fragment, field), term),
+      sourceId: fragment.sourceId,
+      sourceKind: fragment.sourceKind,
+      toolCallId: fragment.toolCallId,
+    })
+
+    if (reasons.length >= 3) {
+      break
+    }
+  }
+
+  return reasons
+}
+
+function findMatchedReasonTerm(fragment: SearchFragmentDocument, group: string[][]): string | null {
+  for (const variant of group) {
+    for (const term of variant) {
+      if (termMatchesAnyFragmentField(fragment, term)) {
+        return term
+      }
+    }
+  }
+
+  return null
+}
+
+function findFragmentReasonField(
+  fragment: SearchFragmentDocument,
+  term: string,
+): SessionSearchModifier | null {
+  const fields: SessionSearchModifier[] = [
+    'content',
+    'path',
+    'file',
+    'command',
+    'issue',
+    'error',
+    'model',
+    'reasoning',
+    'source',
+    'kind',
+    'tool',
+    'status',
+    'id',
+    'title',
+  ]
+
+  return fields.find((field) => getFragmentFieldValue(fragment, field).includes(term)) ?? null
 }
 
 function mergeSearchMatches(matches: SessionSearchMatch[]): SessionSearchMatch[] {

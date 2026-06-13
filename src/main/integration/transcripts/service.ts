@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, dirname, join, sep } from 'node:path'
 
 import type {
   SessionTranscript,
@@ -37,7 +38,7 @@ export async function loadSessionTranscriptFromFile(
   rewindBoundaryMessageIdsByMessageId?: ReadonlyMap<string, string>,
 ): Promise<SessionTranscript> {
   const parsed = await parseTranscriptFileFromPath(sourcePath)
-  const sidecars = readTranscriptSidecars(sourcePath)
+  const sidecars = readTranscriptSidecars(sessionId, sourcePath)
   return {
     ...buildSessionTranscript(
       sessionId,
@@ -121,18 +122,52 @@ function buildSessionTranscript(
   }
 }
 
-function readTranscriptSidecars(sourcePath: string): {
+function readTranscriptSidecars(
+  sessionId: string,
+  sourcePath: string,
+): {
   settings?: SessionSettingsSearchSource
   snapshots?: SessionFileSnapshotSearchSource[]
 } {
   const sessionArtifactBasePath = join(dirname(sourcePath), basename(sourcePath, '.jsonl'))
   const settings = readSettingsSidecar(`${sessionArtifactBasePath}.settings.json`)
-  const snapshots = readSnapshotsSidecar(`${sessionArtifactBasePath}.snapshots.json`)
+  const snapshots = [
+    ...readSnapshotsSidecar(`${sessionArtifactBasePath}.snapshots.json`),
+    ...readSnapshotsSidecar(resolveGlobalSnapshotsSidecarPath(sessionId, sourcePath)),
+  ]
 
   return {
     ...(settings ? { settings } : {}),
     ...(snapshots.length > 0 ? { snapshots } : {}),
   }
+}
+
+function resolveGlobalSnapshotsSidecarPath(sessionId: string, sourcePath: string): string {
+  const factorySessionsSegment = `${sep}.factory${sep}sessions${sep}`
+  const segmentIndex = sourcePath.indexOf(factorySessionsSegment)
+
+  if (segmentIndex >= 0) {
+    return join(
+      sourcePath.slice(0, segmentIndex + `${sep}.factory`.length),
+      'snapshots',
+      'manifests',
+      `${sessionId}.snapshots.json`,
+    )
+  }
+
+  const sessionsSegment = `${sep}sessions${sep}`
+  const sessionsIndex = sourcePath.indexOf(sessionsSegment)
+
+  if (sessionsIndex >= 0) {
+    return join(
+      sourcePath.slice(0, sessionsIndex),
+      'snapshots',
+      'manifests',
+      `${sessionId}.snapshots.json`,
+    )
+  }
+
+  return join(homedir(), '.factory', 'snapshots', 'manifests', `${sessionId}.snapshots.json`)
 }
 
 function readSettingsSidecar(filePath: string): SessionSettingsSearchSource | null {
@@ -169,7 +204,9 @@ function readSnapshotsSidecar(filePath: string): SessionFileSnapshotSearchSource
     ? parsed
     : isRecord(parsed) && Array.isArray(parsed.snapshots)
       ? parsed.snapshots
-      : []
+      : isRecord(parsed) && Array.isArray(parsed.boundaries)
+        ? snapshotsFromManifestBoundaries(parsed.boundaries)
+        : []
 
   return snapshots.flatMap((snapshot): SessionFileSnapshotSearchSource[] => {
     if (!isRecord(snapshot)) {
@@ -198,6 +235,50 @@ function readSnapshotsSidecar(filePath: string): SessionFileSnapshotSearchSource
       },
     ]
   })
+}
+
+function snapshotsFromManifestBoundaries(boundaries: unknown[]): unknown[] {
+  return boundaries.flatMap((boundary) => {
+    if (!isRecord(boundary)) {
+      return []
+    }
+
+    const boundaryContext = {
+      messageId: boundary.messageId,
+      messageIndex: boundary.messageIndex,
+      timestamp: boundary.timestamp,
+    }
+
+    return [
+      ...manifestSnapshotEntries(boundary.files, boundaryContext, 'snapshot'),
+      ...manifestSnapshotEntries(boundary.creations, boundaryContext, 'created'),
+      ...manifestSnapshotEntries(boundary.deletions, boundaryContext, 'deleted'),
+    ]
+  })
+}
+
+function manifestSnapshotEntries(
+  entries: unknown,
+  boundaryContext: Record<string, unknown>,
+  changeKind: string,
+): unknown[] {
+  if (!Array.isArray(entries)) {
+    return []
+  }
+
+  return entries.map((entry) =>
+    isRecord(entry)
+      ? {
+          ...entry,
+          capturedAt: entry.capturedAt ?? entry.createdAt ?? entry.deletedAt,
+          changeKind,
+          messageId: entry.messageId ?? boundaryContext.messageId,
+          messageIndex: entry.messageIndex ?? boundaryContext.messageIndex,
+          sizeBytes: entry.sizeBytes ?? entry.size,
+          timestamp: entry.timestamp ?? boundaryContext.timestamp,
+        }
+      : entry,
+  )
 }
 
 function readJsonSidecar(filePath: string): unknown {
