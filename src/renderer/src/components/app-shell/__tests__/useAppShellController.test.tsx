@@ -85,7 +85,9 @@ describe('useAppShellController', () => {
         copySelectedId: vi.fn(),
         detachSelected: vi.fn(),
         feedback: null,
-        forkSelected: vi.fn(),
+        forkWorkflow: {
+          openForkDialog: vi.fn(),
+        },
         openRewindDialog: vi.fn(),
         openRenameDialog: vi.fn(),
       },
@@ -190,7 +192,7 @@ describe('useAppShellController', () => {
       const selectSession = vi.fn()
       const attachSelected = vi.fn().mockResolvedValue(true)
       const compactSelected = vi.fn().mockResolvedValue(undefined)
-      const forkSelected = vi.fn().mockResolvedValue(undefined)
+      const openForkDialog = vi.fn()
       const openRewindDialog = vi.fn()
       const resultRef = { current: null as ReturnType<typeof useAppShellController> | null }
 
@@ -225,7 +227,9 @@ describe('useAppShellController', () => {
                 copySelectedId: vi.fn(),
                 detachSelected: vi.fn(),
                 feedback: null,
-                forkSelected,
+                forkWorkflow: {
+                  openForkDialog,
+                },
                 renameWorkflow: {
                   openRenameDialog: vi.fn(),
                 },
@@ -315,8 +319,8 @@ describe('useAppShellController', () => {
         await resultRef.current?.handleForkSelectedSession()
       })
 
-      expect(forkSelected).toHaveBeenCalledTimes(1)
-      expect(resultRef.current.transcriptScrollSignal).toBe(3)
+      expect(openForkDialog).toHaveBeenCalledTimes(1)
+      expect(resultRef.current.transcriptScrollSignal).toBe(2)
 
       act(() => {
         resultRef.current?.handleRewindSelectedSession()

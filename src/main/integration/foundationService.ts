@@ -160,8 +160,16 @@ export interface FoundationService {
     customInstructions?: string,
     viewerId?: string,
   ) => Promise<LiveSessionCompactResult>
-  forkSession: (sessionId: string, viewerId?: string) => Promise<LiveSessionSnapshot>
-  forkSessionViaDaemon: (sessionId: string, viewerId?: string) => Promise<LiveSessionSnapshot>
+  forkSession: (
+    sessionId: string,
+    viewerId?: string,
+    title?: string,
+  ) => Promise<LiveSessionSnapshot>
+  forkSessionViaDaemon: (
+    sessionId: string,
+    viewerId?: string,
+    title?: string,
+  ) => Promise<LiveSessionSnapshot>
   renameSessionViaDaemon: (sessionId: string, title: string) => Promise<void>
   interruptSession: (sessionId: string) => Promise<void>
   getBootstrap: () => FoundationBootstrap
@@ -562,8 +570,8 @@ export function createFoundationService(
       return result
     },
     forkSession: liveSessionRuntime.forkSession,
-    forkSessionViaDaemon: async (sessionId, viewerId) => {
-      const snapshot = await daemonSessionControl.forkSession(sessionId, viewerId)
+    forkSessionViaDaemon: async (sessionId, viewerId, title) => {
+      const snapshot = await daemonSessionControl.forkSession(sessionId, viewerId, title)
       emitFoundationChanged()
       return snapshot
     },

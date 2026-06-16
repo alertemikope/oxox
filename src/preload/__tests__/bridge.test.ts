@@ -571,11 +571,15 @@ describe('createOxoxBridge', () => {
         interactionMode: 'spec',
       }),
     ).resolves.toBeUndefined()
-    await expect(bridge.session.fork('session-live-1')).resolves.toMatchObject({
+    await expect(
+      bridge.session.fork('session-live-1', '[Fork] Live session'),
+    ).resolves.toMatchObject({
       sessionId: 'session-live-1',
       status: 'active',
     })
-    await expect(bridge.session.forkViaDaemon('session-live-1')).resolves.toMatchObject({
+    await expect(
+      bridge.session.forkViaDaemon('session-live-1', '[Fork] Live session'),
+    ).resolves.toMatchObject({
       sessionId: 'session-live-1',
       status: 'active',
     })
@@ -624,8 +628,16 @@ describe('createOxoxBridge', () => {
       modelId: 'gpt-5.4-mini',
       interactionMode: 'spec',
     })
-    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.sessionFork, 'session-live-1')
-    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.sessionForkViaDaemon, 'session-live-1')
+    expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.sessionFork,
+      'session-live-1',
+      '[Fork] Live session',
+    )
+    expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.sessionForkViaDaemon,
+      'session-live-1',
+      '[Fork] Live session',
+    )
     expect(invoke).toHaveBeenCalledWith(
       IPC_CHANNELS.sessionRenameViaDaemon,
       'session-live-1',

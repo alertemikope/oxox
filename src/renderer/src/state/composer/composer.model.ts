@@ -10,6 +10,7 @@ import type { FoundationStore } from '../foundation/foundation.model'
 import type { LiveSessionStore } from '../live-sessions/live-session.model'
 import { toSessionRecord } from '../live-sessions/live-session-record.factories'
 import type { SessionStore } from '../sessions/session.model'
+import { ForkWorkflowStore } from '../workflows/fork/fork-workflow.model'
 import { PermissionResolutionStore } from '../workflows/permission-resolution/permission-resolution.model'
 import { RenameWorkflowStore } from '../workflows/rename/rename-workflow.model'
 import { RewindWorkflowStore } from '../workflows/rewind/rewind-workflow.model'
@@ -46,6 +47,7 @@ export class ComposerStore {
   readonly state$: Observable<ComposerState> = createComposerState$()
 
   readonly feedbackStore: FeedbackStore
+  readonly forkWorkflow: ForkWorkflowStore
   readonly renameWorkflow: RenameWorkflowStore
   readonly rewindWorkflow: RewindWorkflowStore
   readonly permissionResolution: PermissionResolutionStore
@@ -76,6 +78,20 @@ export class ComposerStore {
     this.lastSessionId = sessionStore.selectedSessionId || null
 
     this.feedbackStore = new FeedbackStore()
+
+    this.forkWorkflow = new ForkWorkflowStore(
+      () => this.sessionStore.selectedSessionId || null,
+      () =>
+        this.sessionStore.selectedSession ??
+        (this.liveSessionStore.selectedSnapshot as { title: string } | null),
+      this.sessionApi,
+      async (snapshot) => {
+        await this.foundationStore.refresh()
+        this.liveSessionStore.upsertSnapshot(snapshot)
+        this.sessionStore.selectSession(snapshot.sessionId)
+        this.feedbackStore.showFeedback(`Forked \u201c${snapshot.title}\u201d.`)
+      },
+    )
 
     this.renameWorkflow = new RenameWorkflowStore(
       () => this.sessionStore.selectedSessionId || null,
@@ -587,7 +603,7 @@ export class ComposerStore {
     }
   }
 
-  forkSelected = async (): Promise<void> => {
+  forkSelected = async (title?: string): Promise<void> => {
     const selectedSessionId = this.sessionStore.selectedSessionId
     const fork = this.sessionApi.fork ?? this.sessionApi.forkViaDaemon
 
@@ -600,7 +616,7 @@ export class ComposerStore {
     })
 
     try {
-      const snapshot = await fork(selectedSessionId)
+      const snapshot = await fork(selectedSessionId, title?.trim() || undefined)
 
       this.liveSessionStore.upsertSnapshot(snapshot)
       this.sessionStore.selectSession(snapshot.sessionId)

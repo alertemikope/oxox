@@ -1466,6 +1466,130 @@ describe('createSessionProcessManager', () => {
     })
   })
 
+  it('renames titled primary forks and marks the derived transcript title as manual', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'oxox-session-process-'))
+    const sessionsRoot = mkdtempSync(join(tmpdir(), 'oxox-session-transcripts-'))
+    const derivedTranscriptPath = join(sessionsRoot, 'session-fork-derived.jsonl')
+    writeFileSync(
+      derivedTranscriptPath,
+      `${JSON.stringify({
+        type: 'session_start',
+        id: 'session-fork-derived',
+        title: 'Generated fork title',
+        sessionTitle: 'Generated fork title',
+        owner: 'brojbean',
+      })}\n`,
+    )
+    const database = createDatabaseService({
+      userDataPath,
+      databaseFactory: createSqliteDatabaseFactory(),
+    })
+    cleanup.push(() => database.close())
+
+    database.upsertSession({
+      sessionId: 'session-fork-source',
+      projectWorkspacePath: '/tmp/fork-source',
+      modelId: 'gpt-5.4',
+      hasUserMessage: true,
+      title: 'Fork source',
+      status: 'completed',
+      transport: 'artifacts',
+      createdAt: '2026-04-08T20:00:00.000Z',
+      lastActivityAt: '2026-04-08T20:10:00.000Z',
+      updatedAt: '2026-04-08T20:10:00.000Z',
+    })
+
+    const sourceProcess = new FakeChildProcess(7_121)
+    const forkProcess = new FakeChildProcess(7_122)
+    const spawnProcess = vi.fn().mockReturnValueOnce(sourceProcess).mockReturnValueOnce(forkProcess)
+    const manager = createSessionProcessManager({
+      database,
+      droidPath: '/opt/factory/bin/droid',
+      droidSdkSessionFactory: createTestDroidSdkSessionFactory(spawnProcess),
+      sessionsRoot,
+      spawnProcess,
+    })
+    cleanup.push(() => manager.dispose())
+
+    const forkPromise = manager.forkSession('session-fork-source', {
+      title: '[Fork] Custom source',
+      viewerId: 'window-1',
+    })
+
+    await waitFor(() => sourceProcess.writes.length === 1)
+    sourceProcess.emitStdout(
+      createResponse(getRequestId(sourceProcess), {
+        session: {
+          messages: [
+            {
+              id: 'message-1',
+              role: 'user',
+              content: [{ type: 'text', text: 'Fork me' }],
+            },
+          ],
+        },
+        settings: { modelId: 'gpt-5.4', reasoningEffort: 'medium' },
+        cwd: '/tmp/fork-source',
+        isAgentLoopInProgress: false,
+      }),
+    )
+
+    await waitFor(() => sourceProcess.writes.length === 2)
+    const forkRequest = JSON.parse(sourceProcess.writes[1] ?? '{}') as {
+      method?: string
+      id?: string
+    }
+    sourceProcess.emitStdout(
+      createResponse(forkRequest.id ?? 'session:fork:1', {
+        newSessionId: 'session-fork-derived',
+      }),
+    )
+
+    await waitFor(() => forkProcess.writes.length === 1)
+    forkProcess.emitStdout(
+      createResponse(getRequestId(forkProcess), {
+        session: {
+          messages: [
+            {
+              id: 'message-1',
+              role: 'user',
+              content: [{ type: 'text', text: 'Fork me' }],
+            },
+          ],
+        },
+        settings: { modelId: 'gpt-5.4', reasoningEffort: 'medium' },
+        cwd: '/tmp/fork-source',
+        isAgentLoopInProgress: false,
+      }),
+    )
+
+    await waitFor(() => forkProcess.writes.length === 2)
+    const renameRequest = JSON.parse(forkProcess.writes[1] ?? '{}') as {
+      method?: string
+      params?: Record<string, unknown>
+      id?: string
+    }
+    expect(renameRequest.method).toBe('droid.rename_session')
+    expect(renameRequest.params).toEqual({ title: '[Fork] Custom source' })
+    forkProcess.emitStdout(
+      createResponse(renameRequest.id ?? 'session:rename:1', { success: true }),
+    )
+
+    await expect(forkPromise).resolves.toMatchObject({
+      sessionId: 'session-fork-derived',
+      title: '[Fork] Custom source',
+      parentSessionId: 'session-fork-source',
+    })
+    const renamedStartRecord = JSON.parse(
+      readFileSync(derivedTranscriptPath, 'utf8').split('\n')[0] ?? '',
+    )
+    expect(renamedStartRecord).toMatchObject({
+      title: 'Generated fork title',
+      sessionTitle: '[Fork] Custom source',
+      isSessionTitleManuallySet: true,
+    })
+  })
+
   it('marks renamed transcript titles as manual so fork reloads preserve them', async () => {
     const userDataPath = mkdtempSync(join(tmpdir(), 'oxox-session-process-'))
     const sessionsRoot = mkdtempSync(join(tmpdir(), 'oxox-session-transcripts-'))

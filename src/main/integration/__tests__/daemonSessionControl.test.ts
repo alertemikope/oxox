@@ -87,6 +87,60 @@ describe('createDaemonSessionControl', () => {
     expect(liveSessionRuntime.attachSession).toHaveBeenCalledWith('session-beta', 'renderer:1')
   })
 
+  it('renames daemon forks when a title is provided', async () => {
+    const daemonTransport = {
+      supportsMethod: vi.fn().mockReturnValue(true),
+      forkSession: vi.fn().mockResolvedValue({ newSessionId: 'session-beta' }),
+      renameSession: vi.fn().mockResolvedValue({ success: true }),
+      refreshSessions: vi.fn().mockResolvedValue(undefined),
+    }
+    const sessionCatalog = {
+      syncArtifacts: vi.fn().mockResolvedValue(undefined),
+      listSessions: vi
+        .fn()
+        .mockReturnValueOnce([createSessionRecord({ id: 'session-beta', title: 'Beta session' })])
+        .mockReturnValueOnce([
+          createSessionRecord({ id: 'session-beta', title: '[Fork] Alpha session' }),
+        ]),
+    }
+    const liveSessionRuntime = {
+      attachSession: vi.fn().mockResolvedValue(
+        createSnapshot({
+          sessionId: 'session-beta',
+          title: 'Beta session',
+          status: 'idle',
+        }),
+      ),
+      renameSession: vi.fn().mockResolvedValue(undefined),
+    }
+
+    const control = createDaemonSessionControl({
+      daemonTransport,
+      sessionCatalog,
+      liveSessionRuntime,
+      sessionsRoot: tmpdir(),
+    })
+
+    const snapshot = await control.forkSession(
+      'session-alpha',
+      'renderer:1',
+      '[Fork] Alpha session',
+    )
+
+    expect(snapshot).toMatchObject({
+      sessionId: 'session-beta',
+      title: '[Fork] Alpha session',
+    })
+    expect(daemonTransport.renameSession).toHaveBeenCalledWith(
+      'session-beta',
+      '[Fork] Alpha session',
+    )
+    expect(liveSessionRuntime.renameSession).toHaveBeenCalledWith(
+      'session-beta',
+      '[Fork] Alpha session',
+    )
+  })
+
   it('renames via daemon, refreshes catalog state, and leaves artifacts to sync', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'oxox-daemon-session-control-'))
     const sourcePath = join(directory, 'session-alpha.jsonl')

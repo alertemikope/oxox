@@ -1,5 +1,6 @@
 import { useReducedMotion } from 'framer-motion'
 import { useStores } from '../../state/root/store-provider'
+import { SessionForkDialogConnected } from '../transcript/SessionForkDialogConnected'
 import { SessionRenameDialogConnected } from '../transcript/SessionRenameDialogConnected'
 import { SessionRewindDialogConnected } from '../transcript/SessionRewindDialogConnected'
 import { AppShellControllerProvider } from './AppShellControllerContext'
@@ -35,6 +36,7 @@ export function AppShell() {
 
   return (
     <AppShellControllerProvider value={controller}>
+      <SessionForkDialogConnected />
       <SessionRenameDialogConnected />
       <SessionRewindDialogConnected />
       <AppShellView prefersReducedMotion={prefersReducedMotion ?? false} />

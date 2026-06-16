@@ -1214,8 +1214,8 @@ export interface OxoxBridge {
     getContextStats: (sessionId: string) => Promise<LiveSessionContextStatsInfo | null>
     updateSettings: (sessionId: string, settings: Partial<LiveSessionSettings>) => Promise<void>
     interrupt: (sessionId: string) => Promise<void>
-    fork: (sessionId: string) => Promise<LiveSessionSnapshot>
-    forkViaDaemon: (sessionId: string) => Promise<LiveSessionSnapshot>
+    fork: (sessionId: string, title?: string) => Promise<LiveSessionSnapshot>
+    forkViaDaemon: (sessionId: string, title?: string) => Promise<LiveSessionSnapshot>
     renameViaDaemon: (sessionId: string, title: string) => Promise<void>
     getRewindInfo: (sessionId: string, messageId: string) => Promise<LiveSessionRewindInfo>
     executeRewind: (

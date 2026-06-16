@@ -51,7 +51,7 @@ export function AppShellSidebar({ prefersReducedMotion, shouldAnimate }: AppShel
   const handleForkSession = useCallback(
     (sessionId: string) => {
       sessionStore.selectSession(sessionId)
-      void composerStore.forkSelected()
+      composerStore.forkWorkflow.openForkDialog()
     },
     [composerStore, sessionStore],
   )

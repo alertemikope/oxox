@@ -309,15 +309,27 @@ export function registerAppIpcHandlers({
     ) => service.updateSessionSettings(sessionId, settings),
     [IPC_CHANNELS.sessionInterrupt]: (_event, sessionId: string) =>
       service.interruptSession(sessionId),
-    [IPC_CHANNELS.sessionFork]: async (event: IpcInvokeEventLike, sessionId: string) => {
+    [IPC_CHANNELS.sessionFork]: async (
+      event: IpcInvokeEventLike,
+      sessionId: string,
+      title?: string,
+    ) => {
       ensureSenderCleanup(event.sender)
-      const snapshot = await service.forkSession(sessionId, `renderer:${event.sender.id}`)
+      const snapshot = await service.forkSession(sessionId, `renderer:${event.sender.id}`, title)
       registerRendererSessionAttachment(event.sender.id, snapshot.sessionId)
       return snapshot
     },
-    [IPC_CHANNELS.sessionForkViaDaemon]: async (event: IpcInvokeEventLike, sessionId: string) => {
+    [IPC_CHANNELS.sessionForkViaDaemon]: async (
+      event: IpcInvokeEventLike,
+      sessionId: string,
+      title?: string,
+    ) => {
       ensureSenderCleanup(event.sender)
-      const snapshot = await service.forkSessionViaDaemon(sessionId, `renderer:${event.sender.id}`)
+      const snapshot = await service.forkSessionViaDaemon(
+        sessionId,
+        `renderer:${event.sender.id}`,
+        title,
+      )
       registerRendererSessionAttachment(event.sender.id, snapshot.sessionId)
       return snapshot
     },

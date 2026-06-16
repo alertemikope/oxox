@@ -781,7 +781,7 @@ describe('ComposerStore', () => {
 
     await composerStore.forkSelected()
 
-    expect(fork).toHaveBeenCalledWith('session-alpha')
+    expect(fork).toHaveBeenCalledWith('session-alpha', undefined)
     expect(sessionStore.selectedSessionId).toBe('session-fork')
     expect(liveSessionStore.selectedSnapshot?.title).toBe('Forked session')
     expect(composerStore.feedbackStore.feedback).toEqual({
@@ -870,13 +870,36 @@ describe('ComposerStore', () => {
 
     await composerStore.forkSelected()
 
-    expect(fork).toHaveBeenCalledWith('session-alpha')
+    expect(fork).toHaveBeenCalledWith('session-alpha', undefined)
     expect(forkViaDaemon).not.toHaveBeenCalled()
     expect(sessionStore.selectedSessionId).toBe('session-fork')
     expect(composerStore.feedbackStore.feedback).toEqual({
       message: 'Forked \u201cForked session\u201d.',
       tone: 'success',
     })
+  })
+
+  it('passes a custom title when forking the selected session', async () => {
+    const fork = vi.fn().mockResolvedValue(
+      createLiveSnapshot({
+        sessionId: 'session-fork',
+        title: '[Fork] Custom title',
+        status: 'active',
+      }),
+    )
+
+    mockBridge({
+      fork,
+    })
+
+    const { composerStore } = createStores({
+      selectedSessionId: 'session-alpha',
+      snapshot: createLiveSnapshot({ title: 'Original session' }),
+    })
+
+    await composerStore.forkSelected(' [Fork] Custom title ')
+
+    expect(fork).toHaveBeenCalledWith('session-alpha', '[Fork] Custom title')
   })
 
   it('renames the selected session via daemon-only session api', async () => {

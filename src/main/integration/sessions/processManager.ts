@@ -184,6 +184,31 @@ export function createSessionProcessManager(options: CreateSessionProcessManager
     return method as NonNullable<StreamJsonRpcProcessTransportLike[TMethod]>
   }
 
+  const renameManagedSession = async (
+    sessionId: string,
+    title: string,
+  ): Promise<ManagedSession> => {
+    const session = await ensureLoadedSession(sessionId)
+    const transport = requireManagedTransport(session)
+    await requireTransportMethod(transport, 'renameSession').call(
+      transport,
+      nextRequestId('session:rename'),
+      title,
+    )
+    const transcriptPath = options.sessionsRoot
+      ? findSessionTranscriptPath(options.sessionsRoot, sessionId)
+      : null
+
+    if (transcriptPath) {
+      await renameSessionTitleInTranscript(transcriptPath, title)
+    }
+
+    session.title = title
+    session.updatedAt = now()
+    persistManagedSession(session)
+    return session
+  }
+
   const createManagedSession = (
     sessionId: string,
     transport: StreamJsonRpcProcessTransportLike,
@@ -406,24 +431,7 @@ export function createSessionProcessManager(options: CreateSessionProcessManager
     },
 
     async renameSession(sessionId: string, title: string): Promise<void> {
-      const session = await ensureLoadedSession(sessionId)
-      const transport = requireManagedTransport(session)
-      await requireTransportMethod(transport, 'renameSession').call(
-        transport,
-        nextRequestId('session:rename'),
-        title,
-      )
-      const transcriptPath = options.sessionsRoot
-        ? findSessionTranscriptPath(options.sessionsRoot, sessionId)
-        : null
-
-      if (transcriptPath) {
-        await renameSessionTitleInTranscript(transcriptPath, title)
-      }
-
-      session.title = title
-      session.updatedAt = now()
-      persistManagedSession(session)
+      await renameManagedSession(sessionId, title)
     },
 
     async listSessionTools(sessionId: string): Promise<LiveSessionToolInfo[]> {
@@ -639,7 +647,15 @@ export function createSessionProcessManager(options: CreateSessionProcessManager
       request: ForkSessionRequest = {},
     ): Promise<LiveSessionSnapshot> {
       const parentSession = await ensureLoadedSession(sessionId)
-      return derivationManager.fork(parentSession, request)
+      const snapshot = await derivationManager.fork(parentSession, request)
+      const forkTitle = request.title?.trim()
+
+      if (!forkTitle) {
+        return snapshot
+      }
+
+      const renamedSession = await renameManagedSession(snapshot.sessionId, forkTitle)
+      return tracker.toSnapshot(renamedSession)
     },
 
     async getRewindInfo(sessionId: string, messageId: string): Promise<LiveSessionRewindInfo> {

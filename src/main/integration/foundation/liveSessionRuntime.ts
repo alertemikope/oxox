@@ -104,6 +104,7 @@ interface SessionProcessManagerLike {
   forkSession: (
     sessionId: string,
     request?: {
+      title?: string
       viewerId?: string
     },
   ) => Promise<RuntimeLiveSessionSnapshot>
@@ -180,7 +181,11 @@ export interface FoundationLiveSessionRuntime {
     customInstructions?: string,
     viewerId?: string,
   ) => Promise<LiveSessionCompactResult>
-  forkSession: (sessionId: string, viewerId?: string) => Promise<LiveSessionSnapshot>
+  forkSession: (
+    sessionId: string,
+    viewerId?: string,
+    title?: string,
+  ) => Promise<LiveSessionSnapshot>
   interruptSession: (sessionId: string) => Promise<void>
   subscribeToSnapshots: (listener: (sessionId: string) => void) => () => void
   subscribeToEvents: (
@@ -362,8 +367,8 @@ export function createFoundationLiveSessionRuntime({
       onChange?.()
       return serializeCompactResult(result)
     },
-    forkSession: async (sessionId, viewerId) => {
-      const snapshot = await sessionProcessManager.forkSession(sessionId, { viewerId })
+    forkSession: async (sessionId, viewerId, title) => {
+      const snapshot = await sessionProcessManager.forkSession(sessionId, { title, viewerId })
       ensureSessionSubscription(snapshot.sessionId)
       emitSnapshot(snapshot.sessionId)
       onChange?.()

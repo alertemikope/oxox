@@ -455,9 +455,14 @@ describe('registerAppIpcHandlers', () => {
       await ipcMain.handlers.get(IPC_CHANNELS.sessionForkViaDaemon)?.(
         { sender: { id: 42, once: vi.fn() } },
         'session-1',
+        '[Fork] Session',
       ),
     ).toEqual({ sessionId: 'session-daemon-fork' })
-    expect(service.forkSessionViaDaemon).toHaveBeenCalledWith('session-1', 'renderer:42')
+    expect(service.forkSessionViaDaemon).toHaveBeenCalledWith(
+      'session-1',
+      'renderer:42',
+      '[Fork] Session',
+    )
     await ipcMain.handlers.get(IPC_CHANNELS.sessionRenameViaDaemon)?.(
       undefined,
       'session-1',

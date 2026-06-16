@@ -171,6 +171,7 @@ export interface AttachSessionRequest {
 
 export interface ForkSessionRequest {
   cwd?: string
+  title?: string
   viewerId?: string
 }
 

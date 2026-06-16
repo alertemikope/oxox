@@ -119,7 +119,9 @@ describe('createFoundationLiveSessionRuntime', () => {
       snapshot: { sessionId: 'session-compact' },
       removedCount: 3,
     })
-    await expect(runtime.forkSession('session-parent', 'renderer:4')).resolves.toMatchObject({
+    await expect(
+      runtime.forkSession('session-parent', 'renderer:4', '[Fork] Parent'),
+    ).resolves.toMatchObject({
       sessionId: 'session-forked',
     })
 
@@ -148,6 +150,7 @@ describe('createFoundationLiveSessionRuntime', () => {
     })
     expect(processManager.subscribe).toHaveBeenCalledWith('session-compact', expect.any(Function))
     expect(processManager.forkSession).toHaveBeenCalledWith('session-parent', {
+      title: '[Fork] Parent',
       viewerId: 'renderer:4',
     })
     expect(processManager.subscribe).toHaveBeenCalledWith('session-forked', expect.any(Function))

@@ -103,9 +103,8 @@ export function useAppShellController({
     }
   }, [composerStore, focusTranscriptPrimaryAction])
 
-  const handleForkSelectedSession = useCallback(async () => {
-    await composerStore.forkSelected()
-    setTranscriptScrollSignal((current) => current + 1)
+  const handleForkSelectedSession = useCallback(() => {
+    composerStore.forkWorkflow.openForkDialog()
   }, [composerStore])
 
   const handleCompactSelectedSession = useCallback(async () => {

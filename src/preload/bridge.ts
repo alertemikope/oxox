@@ -345,10 +345,15 @@ export function createOxoxBridge(
       updateSettings: (sessionId, settings) =>
         invokeTyped<void>(invoke, IPC_CHANNELS.sessionUpdateSettings, sessionId, settings),
       interrupt: (sessionId) => invokeTyped<void>(invoke, IPC_CHANNELS.sessionInterrupt, sessionId),
-      fork: (sessionId) =>
-        invokeTyped<LiveSessionSnapshot>(invoke, IPC_CHANNELS.sessionFork, sessionId),
-      forkViaDaemon: (sessionId) =>
-        invokeTyped<LiveSessionSnapshot>(invoke, IPC_CHANNELS.sessionForkViaDaemon, sessionId),
+      fork: (sessionId, title) =>
+        invokeTyped<LiveSessionSnapshot>(invoke, IPC_CHANNELS.sessionFork, sessionId, title),
+      forkViaDaemon: (sessionId, title) =>
+        invokeTyped<LiveSessionSnapshot>(
+          invoke,
+          IPC_CHANNELS.sessionForkViaDaemon,
+          sessionId,
+          title,
+        ),
       renameViaDaemon: (sessionId, title) =>
         invokeTyped<void>(invoke, IPC_CHANNELS.sessionRenameViaDaemon, sessionId, title),
       getRewindInfo: (sessionId, messageId) =>
