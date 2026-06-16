@@ -113,6 +113,34 @@ describe('TranscriptRenderer (live)', () => {
     vi.restoreAllMocks()
   })
 
+  it('routes live message fork actions to the rewind target callback', () => {
+    const onForkFromMessage = vi.fn()
+
+    render(
+      <TranscriptRenderer
+        items={[
+          {
+            kind: 'message',
+            id: 'live-user-1',
+            messageId: 'live-user-1',
+            rewindBoundaryMessageId: 'live-rewind-1',
+            role: 'user',
+            content: 'Start here.',
+            status: 'completed',
+            occurredAt: '2026-06-02T12:34:34.318Z',
+          },
+        ]}
+        isLive
+        isLoading={false}
+        onForkFromMessage={onForkFromMessage}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /fork from here/i }))
+
+    expect(onForkFromMessage).toHaveBeenCalledWith('live-rewind-1')
+  })
+
   it('keeps thinking as a collapsible row and renders resumed assistant text after tool rows', () => {
     render(
       <TranscriptRenderer
@@ -1382,6 +1410,34 @@ describe('TranscriptRenderer (historical)', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('routes historical message fork actions to the rewind target callback', () => {
+    const onForkFromMessage = vi.fn()
+
+    render(
+      <TranscriptRenderer
+        items={[
+          {
+            kind: 'message',
+            id: 'historical-assistant-1',
+            messageId: 'historical-assistant-1',
+            rewindBoundaryMessageId: 'historical-rewind-1',
+            role: 'assistant',
+            content: 'Fork from this response.',
+            status: 'completed',
+            occurredAt: '2026-06-02T12:34:34.318Z',
+          },
+        ]}
+        isLive={false}
+        isLoading={false}
+        onForkFromMessage={onForkFromMessage}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /fork from here/i }))
+
+    expect(onForkFromMessage).toHaveBeenCalledWith('historical-rewind-1')
   })
 
   it('renders markdown, sync state, and grouped progressive-disclosure tool calls', async () => {

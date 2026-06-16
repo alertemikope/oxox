@@ -91,12 +91,19 @@ export function DetailPanelConnected({
     },
     [composerStore],
   )
+  const handleForkFromMessage = useCallback(
+    (messageId: string) => {
+      void composerStore.rewindWorkflow.executeRewindFromMessage(messageId)
+    },
+    [composerStore],
+  )
 
   return (
     <DetailPanel
       {...props}
       onResolvePermissionRequest={handleResolvePermissionRequest}
       onSubmitAskUserResponse={handleSubmitAskUserResponse}
+      onForkFromMessage={handleForkFromMessage}
     />
   )
 }

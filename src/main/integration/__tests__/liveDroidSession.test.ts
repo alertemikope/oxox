@@ -168,6 +168,79 @@ describe('OxoxLiveDroidSession', () => {
     expect(onStreamError).toHaveBeenCalledWith(streamError)
   })
 
+  it('sends stream-jsonrpc rewind calls with the active session id', async () => {
+    const sendRequest = vi
+      .fn()
+      .mockResolvedValueOnce({
+        availableFiles: [],
+        createdFiles: [],
+        evictedFiles: [],
+      })
+      .mockResolvedValueOnce({
+        newSessionId: 'session-rewind',
+        restoredCount: 0,
+        deletedCount: 0,
+        failedRestoreCount: 0,
+        failedDeleteCount: 0,
+      })
+    const client = {
+      _engine: {
+        sendRequest,
+      },
+    }
+    const sdkSession = {
+      sessionId: 'session-1',
+      initResult: { sessionId: 'session-1', session: { messages: [] } },
+      getRewindInfo: vi.fn(),
+      executeRewind: vi.fn(),
+    }
+    const session = new OxoxLiveDroidSession(client as unknown as DroidClient, sdkSession as never)
+
+    await expect(session.getRewindInfo({ messageId: 'message-1' })).resolves.toEqual({
+      availableFiles: [],
+      createdFiles: [],
+      evictedFiles: [],
+    })
+    await expect(
+      session.executeRewind({
+        messageId: 'message-1',
+        filesToRestore: [],
+        filesToDelete: [],
+        forkTitle: 'Fork from here',
+      }),
+    ).resolves.toEqual({
+      newSessionId: 'session-rewind',
+      restoredCount: 0,
+      deletedCount: 0,
+      failedRestoreCount: 0,
+      failedDeleteCount: 0,
+    })
+
+    expect(sendRequest).toHaveBeenNthCalledWith(
+      1,
+      'droid.get_rewind_info',
+      {
+        sessionId: 'session-1',
+        messageId: 'message-1',
+      },
+      120_000,
+    )
+    expect(sendRequest).toHaveBeenNthCalledWith(
+      2,
+      'droid.execute_rewind',
+      {
+        sessionId: 'session-1',
+        messageId: 'message-1',
+        filesToRestore: [],
+        filesToDelete: [],
+        forkTitle: 'Fork from here',
+      },
+      120_000,
+    )
+    expect(sdkSession.getRewindInfo).not.toHaveBeenCalled()
+    expect(sdkSession.executeRewind).not.toHaveBeenCalled()
+  })
+
   it('creates SDK DroidSession lifecycle while preserving OXOX add-user-message options', async () => {
     const client = new FakeDroidClient()
     const session = await createOxoxLiveDroidSession(client as unknown as DroidClient, {

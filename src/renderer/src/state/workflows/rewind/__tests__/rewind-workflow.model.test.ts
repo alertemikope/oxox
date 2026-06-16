@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LiveSessionRewindInfo, OxoxBridge } from '../../../../../../shared/ipc/contracts'
+import { AsyncActionsStore } from '../../../composer/async-actions.model'
 import { RewindWorkflowStore } from '../rewind-workflow.model'
 
 function createRewindInfo(overrides: Partial<LiveSessionRewindInfo> = {}): LiveSessionRewindInfo {
@@ -131,6 +132,71 @@ describe('RewindWorkflowStore', () => {
 
     expect(store.rewindError).toBe('Rewind failed')
     expect(store.rewindingSessionId).toBeNull()
+  })
+
+  it('executes a message rewind fork in the background without loading rewind info', async () => {
+    const getRewindInfo = vi.fn().mockResolvedValue(createRewindInfo())
+    const executeRewind = vi.fn().mockResolvedValue({
+      snapshot: { sessionId: 'session-rewound', title: 'Fork from Alpha' },
+      restoredCount: 0,
+      deletedCount: 0,
+      failedRestoreCount: 0,
+      failedDeleteCount: 0,
+    })
+    const onRewound = vi.fn().mockResolvedValue(undefined)
+    const asyncActionsStore = new AsyncActionsStore()
+    const store = new RewindWorkflowStore(
+      () => 'session-alpha',
+      () => ({ title: 'Alpha' }),
+      createSessionApi({ executeRewind, getRewindInfo }),
+      onRewound,
+      asyncActionsStore,
+    )
+
+    const result = await store.executeRewindFromMessage('msg-1')
+
+    expect(getRewindInfo).not.toHaveBeenCalled()
+    expect(executeRewind).toHaveBeenCalledWith('session-alpha', {
+      messageId: 'msg-1',
+      filesToRestore: [],
+      filesToDelete: [],
+      forkTitle: 'Fork from Alpha',
+    })
+    expect(onRewound).toHaveBeenCalledWith(result)
+    expect(store.isRewindDialogOpen).toBe(false)
+    expect(store.rewindingSessionId).toBeNull()
+    expect(asyncActionsStore.actions).toEqual([
+      expect.objectContaining({
+        title: 'Fork created',
+        description: 'Fork from Alpha',
+        status: 'success',
+      }),
+    ])
+  })
+
+  it('surfaces background message rewind failures in the async action stack', async () => {
+    const executeRewind = vi.fn().mockRejectedValue(new Error('Rewind timed out'))
+    const asyncActionsStore = new AsyncActionsStore()
+    const store = new RewindWorkflowStore(
+      () => 'session-alpha',
+      () => ({ title: 'Alpha' }),
+      createSessionApi({ executeRewind }),
+      undefined,
+      asyncActionsStore,
+    )
+
+    const result = await store.executeRewindFromMessage('msg-1')
+
+    expect(result).toBeNull()
+    expect(store.rewindError).toBe('Rewind timed out')
+    expect(store.rewindingSessionId).toBeNull()
+    expect(asyncActionsStore.actions).toEqual([
+      expect.objectContaining({
+        title: 'Fork failed',
+        description: 'Rewind timed out',
+        status: 'error',
+      }),
+    ])
   })
 
   it('toggles restore and delete file selections', () => {

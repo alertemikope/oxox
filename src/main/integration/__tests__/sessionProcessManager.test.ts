@@ -1245,7 +1245,14 @@ describe('createSessionProcessManager', () => {
     })
     cleanup.push(() => manager.dispose())
 
-    const rewindInfoPromise = manager.getRewindInfo('session-rewind-source', 'message-1')
+    database.upsertSessionRewindBoundary({
+      sessionId: 'session-rewind-source',
+      messageId: 'message-1',
+      rewindBoundaryMessageId: 'rewind-boundary-1',
+      updatedAt: '2026-04-24T10:00:00.000Z',
+    })
+
+    const rewindInfoPromise = manager.getRewindInfo('session-rewind-source', 'rewind-boundary-1')
     await waitFor(() => sourceProcess.writes.length === 1)
     sourceProcess.emitStdout(
       createResponse(getRequestId(sourceProcess), {
@@ -1271,6 +1278,7 @@ describe('createSessionProcessManager', () => {
     }
     expect(rewindInfoRequest.method).toBe('droid.get_rewind_info')
     expect(rewindInfoRequest.params).toEqual({
+      sessionId: 'session-rewind-source',
       messageId: 'message-1',
     })
     sourceProcess.emitStdout(
@@ -1300,7 +1308,7 @@ describe('createSessionProcessManager', () => {
     })
 
     const executeRewindPromise = manager.executeRewind('session-rewind-source', {
-      messageId: 'message-1',
+      messageId: 'rewind-boundary-1',
       filesToRestore: [
         {
           filePath: '/tmp/rewind-source/src/index.ts',
@@ -1321,6 +1329,7 @@ describe('createSessionProcessManager', () => {
     }
     expect(executeRewindRequest.method).toBe('droid.execute_rewind')
     expect(executeRewindRequest.params).toEqual({
+      sessionId: 'session-rewind-source',
       messageId: 'message-1',
       filesToRestore: [
         {

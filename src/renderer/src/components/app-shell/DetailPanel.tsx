@@ -53,6 +53,7 @@ export interface DetailPanelProps {
     requestId: string
     answers: LiveSessionAskUserAnswerRecord[]
   }) => void
+  onForkFromMessage?: (messageId: string) => void
 }
 
 export function DetailPanel({
@@ -83,6 +84,7 @@ export function DetailPanel({
   onBrowseSessions,
   onResolvePermissionRequest,
   onSubmitAskUserResponse,
+  onForkFromMessage,
 }: DetailPanelProps) {
   if (showNewSessionForm) {
     return (
@@ -231,6 +233,7 @@ export function DetailPanel({
         pendingAskUserRequestIds={pendingAskUserRequestIds}
         onResolvePermissionRequest={onResolvePermissionRequest}
         onSubmitAskUserResponse={onSubmitAskUserResponse}
+        onForkFromMessage={onForkFromMessage}
       />
     )
   }
@@ -298,6 +301,7 @@ export function DetailPanel({
       isRefreshing={isRefreshingTranscript}
       refreshError={selectedTranscriptRefreshError}
       onRetry={onRetrySelectedTranscript}
+      onForkFromMessage={onForkFromMessage}
     />
   )
 }
@@ -312,6 +316,7 @@ function LiveSessionTranscriptView({
   pendingAskUserRequestIds,
   onResolvePermissionRequest,
   onSubmitAskUserResponse,
+  onForkFromMessage,
 }: {
   sessionId: string
   items: TimelineItem[]
@@ -325,6 +330,7 @@ function LiveSessionTranscriptView({
     requestId: string
     answers: LiveSessionAskUserAnswerRecord[]
   }) => void
+  onForkFromMessage?: (messageId: string) => void
 }) {
   return (
     <TranscriptRenderer
@@ -339,6 +345,7 @@ function LiveSessionTranscriptView({
       pendingAskUserRequestIds={pendingAskUserRequestIds}
       onResolvePermissionRequest={onResolvePermissionRequest}
       onSubmitAskUserResponse={onSubmitAskUserResponse}
+      onForkFromMessage={onForkFromMessage}
     />
   )
 }
@@ -352,6 +359,7 @@ function HistoricalTranscriptView({
   isRefreshing,
   refreshError,
   onRetry,
+  onForkFromMessage,
 }: {
   transcript: SessionTranscript | null
   sessionId: string
@@ -361,6 +369,7 @@ function HistoricalTranscriptView({
   isRefreshing: boolean
   refreshError: string | null
   onRetry: () => void
+  onForkFromMessage?: (messageId: string) => void
 }) {
   const items = useMemo(() => buildHistoricalTimeline(transcript?.entries ?? []), [transcript])
 
@@ -374,6 +383,7 @@ function HistoricalTranscriptView({
       searchTarget={transcriptSearchTarget}
       scrollToBottomSignal={transcriptScrollSignal}
       primaryActionRef={transcriptPrimaryActionRef}
+      onForkFromMessage={onForkFromMessage}
       onRetry={onRetry}
     />
   )

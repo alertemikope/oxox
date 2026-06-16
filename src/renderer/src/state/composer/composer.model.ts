@@ -124,8 +124,9 @@ export class ComposerStore {
         await this.foundationStore.refresh()
         this.liveSessionStore.upsertSnapshot(result.snapshot)
         this.sessionStore.selectSession(result.snapshot.sessionId)
-        this.feedbackStore.showFeedback(`Rewound to \u201c${result.snapshot.title}\u201d.`)
+        this.feedbackStore.showFeedback(`Created fork \u201c${result.snapshot.title}\u201d.`)
       },
+      this.asyncActionsStore,
     )
 
     this.permissionResolution = new PermissionResolutionStore(

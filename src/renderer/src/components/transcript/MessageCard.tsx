@@ -1,6 +1,8 @@
-import { memo, useMemo } from 'react'
+import { Check, Copy, GitBranch } from 'lucide-react'
+import { memo, useCallback, useMemo, useState } from 'react'
 
 import type { TranscriptMessageContentBlock } from '../../../../shared/ipc/contracts'
+import { Button } from '../ui/button'
 import { JsonRenderMessage, parseJsonRenderContentSegments } from './JsonRenderMessage'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { parseMessageSegments } from './parseMessageSegments'
@@ -8,9 +10,15 @@ import { SystemReminderBlock } from './SystemReminderBlock'
 import { ThinkingCard } from './ThinkingCard'
 import type { MessageTimelineItem, ThinkingTimelineItem } from './timelineTypes'
 
-export const MessageCard = memo(function MessageCard({ item }: { item: MessageTimelineItem }) {
+export const MessageCard = memo(function MessageCard({
+  item,
+  onForkFromMessage,
+}: {
+  item: MessageTimelineItem
+  onForkFromMessage?: (messageId: string) => void
+}) {
   if (item.role === 'user') {
-    return <UserMessageCard item={item} />
+    return <UserMessageCard item={item} onForkFromMessage={onForkFromMessage} />
   }
 
   if (item.role === 'system') {
@@ -23,10 +31,16 @@ export const MessageCard = memo(function MessageCard({ item }: { item: MessageTi
     )
   }
 
-  return <AssistantMessageCard item={item} />
+  return <AssistantMessageCard item={item} onForkFromMessage={onForkFromMessage} />
 })
 
-function UserMessageCard({ item }: { item: MessageTimelineItem }) {
+function UserMessageCard({
+  item,
+  onForkFromMessage,
+}: {
+  item: MessageTimelineItem
+  onForkFromMessage?: (messageId: string) => void
+}) {
   const contentBlocks = item.contentBlocks ?? [{ type: 'text' as const, text: item.content }]
   const textContent = useMemo(
     () =>
@@ -40,26 +54,40 @@ function UserMessageCard({ item }: { item: MessageTimelineItem }) {
     (block): block is Extract<TranscriptMessageContentBlock, { type: 'image' }> =>
       block.type === 'image',
   )
+  const visibleText = textSegments.map((s) => s.content).join('\n\n')
+  const hasVisibleContent = visibleText.trim().length > 0 || imageBlocks.length > 0
 
   return (
     <div className="py-1">
-      {textSegments.length > 0 ? (
-        <div className="flex justify-end">
-          <div className="max-w-[85%] min-w-0">
-            <div className="ox-user-bubble overflow-hidden rounded-lg px-3 py-1.5">
-              <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-fd-primary">
-                {textSegments.map((s) => s.content).join('\n\n')}
-              </p>
-              {renderImageBlocks(item.id, imageBlocks, 'User')}
+      {hasVisibleContent ? (
+        <div className="group/message">
+          {textSegments.length > 0 ? (
+            <div className="flex justify-end">
+              <div className="max-w-[85%] min-w-0">
+                <div className="ox-user-bubble overflow-hidden rounded-lg px-3 py-1.5">
+                  <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-fd-primary">
+                    {visibleText}
+                  </p>
+                  {renderImageBlocks(item.id, imageBlocks, 'User')}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      ) : imageBlocks.length > 0 ? (
-        <div className="flex justify-end">
-          <div className="max-w-[85%] min-w-0">
-            <div className="ox-user-bubble overflow-hidden rounded-lg px-3 py-1.5">
-              {renderImageBlocks(item.id, imageBlocks, 'User')}
+          ) : (
+            <div className="flex justify-end">
+              <div className="max-w-[85%] min-w-0">
+                <div className="ox-user-bubble overflow-hidden rounded-lg px-3 py-1.5">
+                  {renderImageBlocks(item.id, imageBlocks, 'User')}
+                </div>
+              </div>
             </div>
+          )}
+          <div className="mt-1">
+            <MessageActionRail
+              align="right"
+              copyText={visibleText}
+              item={item}
+              onForkFromMessage={onForkFromMessage}
+            />
           </div>
         </div>
       ) : null}
@@ -70,7 +98,13 @@ function UserMessageCard({ item }: { item: MessageTimelineItem }) {
   )
 }
 
-function AssistantMessageCard({ item }: { item: MessageTimelineItem }) {
+function AssistantMessageCard({
+  item,
+  onForkFromMessage,
+}: {
+  item: MessageTimelineItem
+  onForkFromMessage?: (messageId: string) => void
+}) {
   const contentBlocks = item.contentBlocks ?? [{ type: 'text' as const, text: item.content }]
   const legacyThinkingResult = useMemo(
     () => parseLegacyThinkingMarkdown(item.content),
@@ -99,7 +133,7 @@ function AssistantMessageCard({ item }: { item: MessageTimelineItem }) {
   )
 
   return (
-    <div className="py-1">
+    <div className="group/message py-1">
       {item.status === 'streaming' ? (
         <span
           aria-label="Typing indicator"
@@ -139,15 +173,81 @@ function AssistantMessageCard({ item }: { item: MessageTimelineItem }) {
           <div className="mt-2">{renderImageBlocks(item.id, imageBlocks, 'Assistant')}</div>
         ) : null}
       </div>
-      {item.occurredAt ? (
-        <time
-          className="mt-1 block text-[10px] tabular-nums text-fd-tertiary"
-          dateTime={item.occurredAt}
-          title={item.occurredAt}
+      <MessageActionRail
+        copyText={assistantContent}
+        durationMs={thinkingDurationMs}
+        item={item}
+        onForkFromMessage={onForkFromMessage}
+      />
+    </div>
+  )
+}
+
+function MessageActionRail({
+  item,
+  copyText,
+  durationMs,
+  align = 'left',
+  onForkFromMessage,
+}: {
+  item: MessageTimelineItem
+  copyText: string
+  durationMs?: number
+  align?: 'left' | 'right'
+  onForkFromMessage?: (messageId: string) => void
+}) {
+  const [hasCopied, setHasCopied] = useState(false)
+  const rewindTargetMessageId = item.rewindBoundaryMessageId ?? item.messageId
+  const canFork = Boolean(onForkFromMessage && rewindTargetMessageId.trim().length > 0)
+
+  const handleCopy = useCallback(async () => {
+    if (!navigator.clipboard?.writeText) return
+
+    await navigator.clipboard.writeText(copyText)
+    setHasCopied(true)
+    window.setTimeout(() => setHasCopied(false), 1400)
+  }, [copyText])
+
+  return (
+    <div
+      className={`flex h-6 items-center ${align === 'right' ? 'justify-end' : 'justify-start'}`}
+      data-testid="message-action-rail"
+    >
+      <div className="pointer-events-none inline-flex items-center gap-1 rounded-md border border-transparent bg-fd-panel/70 px-0.5 opacity-0 transition-opacity duration-150 group-hover/message:pointer-events-auto group-hover/message:opacity-100 group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100">
+        <Button
+          aria-label="Copy message"
+          className="size-5"
+          size="icon-xs"
+          type="button"
+          variant="ghost"
+          onClick={() => void handleCopy()}
         >
-          {formatMessageTimestamp(item.occurredAt, thinkingDurationMs)}
-        </time>
-      ) : null}
+          {hasCopied ? <Check className="size-2.5" /> : <Copy className="size-2.5" />}
+        </Button>
+        <Button
+          aria-label="Fork from here"
+          className="size-5"
+          disabled={!canFork}
+          size="icon-xs"
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            if (!canFork) return
+            onForkFromMessage?.(rewindTargetMessageId)
+          }}
+        >
+          <GitBranch className="size-2.5" />
+        </Button>
+        {item.occurredAt ? (
+          <time
+            className="px-1 text-[10px] tabular-nums text-fd-tertiary"
+            dateTime={item.occurredAt}
+            title={item.occurredAt}
+          >
+            {formatMessageTimestamp(item.occurredAt, durationMs)}
+          </time>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -205,16 +305,22 @@ function parseThinkingJsonBlock(
 
 function formatMessageTimestamp(occurredAt: string, durationMs?: number): string {
   const date = new Date(occurredAt)
-  const time = Number.isNaN(date.getTime())
-    ? occurredAt
-    : date.toLocaleTimeString(undefined, {
-        hour: '2-digit',
-        hour12: false,
-        minute: '2-digit',
-        second: '2-digit',
-      })
+  if (Number.isNaN(date.getTime())) {
+    return typeof durationMs === 'number'
+      ? `${occurredAt} · ${formatDuration(durationMs)} thinking`
+      : occurredAt
+  }
 
-  return typeof durationMs === 'number' ? `${time} • ${formatDuration(durationMs)}` : time
+  const now = new Date()
+  const time = date.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  const label = formatMessageDateLabel(date, now)
+
+  return typeof durationMs === 'number'
+    ? `${label} at ${time} · ${formatDuration(durationMs)} thinking`
+    : `${label} at ${time}`
 }
 
 function formatDuration(durationMs: number): string {
@@ -224,6 +330,29 @@ function formatDuration(durationMs: number): string {
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = seconds % 60
   return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`
+}
+
+function formatMessageDateLabel(date: Date, now: Date): string {
+  if (isSameLocalDate(date, now)) return 'Today'
+
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (isSameLocalDate(date, yesterday)) return 'Yesterday'
+
+  const sameYear = date.getFullYear() === now.getFullYear()
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: sameYear ? undefined : 'numeric',
+  })
+}
+
+function isSameLocalDate(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

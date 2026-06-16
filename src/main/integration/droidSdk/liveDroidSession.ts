@@ -53,9 +53,23 @@ export interface OxoxLiveDroidSessionOptions {
   onStreamError?: (error: Error) => void | Promise<void>
 }
 
+const REWIND_REQUEST_TIMEOUT_MS = 120_000
+
+interface DroidClientProtocolEngine {
+  sendRequest: (
+    method: string,
+    params: Record<string, unknown>,
+    timeout?: number,
+  ) => Promise<unknown>
+}
+
+interface DroidClientWithProtocolEngine extends DroidClient {
+  _engine?: DroidClientProtocolEngine
+}
+
 export class OxoxLiveDroidSession {
   constructor(
-    _client: DroidClient,
+    private readonly client: DroidClient,
     private readonly sdkSession: DroidSession,
     private readonly lifecycleCleanups: Array<() => Promise<void>> = [],
     private readonly options: OxoxLiveDroidSessionOptions = {},
@@ -137,11 +151,35 @@ export class OxoxLiveDroidSession {
   }
 
   async getRewindInfo(params: GetRewindInfoRequestParams): Promise<GetRewindInfoResult> {
-    return this.sdkSession.getRewindInfo(params)
+    const engine = (this.client as DroidClientWithProtocolEngine)._engine
+    if (!engine) {
+      return this.sdkSession.getRewindInfo(params)
+    }
+
+    return (await engine.sendRequest(
+      'droid.get_rewind_info',
+      {
+        sessionId: this.sessionId,
+        ...params,
+      },
+      REWIND_REQUEST_TIMEOUT_MS,
+    )) as GetRewindInfoResult
   }
 
   async executeRewind(params: ExecuteRewindRequestParams): Promise<ExecuteRewindResult> {
-    return this.sdkSession.executeRewind(params)
+    const engine = (this.client as DroidClientWithProtocolEngine)._engine
+    if (!engine) {
+      return this.sdkSession.executeRewind(params)
+    }
+
+    return (await engine.sendRequest(
+      'droid.execute_rewind',
+      {
+        sessionId: this.sessionId,
+        ...params,
+      },
+      REWIND_REQUEST_TIMEOUT_MS,
+    )) as ExecuteRewindResult
   }
 
   async compactSession(params?: CompactSessionRequestParams): Promise<CompactSessionResult> {

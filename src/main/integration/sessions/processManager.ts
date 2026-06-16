@@ -87,6 +87,13 @@ export function createSessionProcessManager(options: CreateSessionProcessManager
         .listSessionRewindBoundaries(sessionId)
         .map((boundary) => [boundary.messageId, boundary.rewindBoundaryMessageId]),
     )
+  const resolveRewindSourceMessageId = (sessionId: string, messageId: string): string => {
+    const boundary = options.database
+      .listSessionRewindBoundaries(sessionId)
+      .find((candidate) => candidate.rewindBoundaryMessageId === messageId)
+
+    return boundary?.messageId ?? messageId
+  }
 
   const requireTrackedSession = (sessionId: string): ManagedSession => {
     const session = tracker.get(sessionId)
@@ -662,7 +669,7 @@ export function createSessionProcessManager(options: CreateSessionProcessManager
       const session = await ensureLoadedSession(sessionId)
       return requireManagedTransport(session).getRewindInfo(
         nextRequestId('session:rewind:info'),
-        messageId,
+        resolveRewindSourceMessageId(sessionId, messageId),
       )
     },
 
@@ -671,7 +678,10 @@ export function createSessionProcessManager(options: CreateSessionProcessManager
       request: ExecuteRewindRequest,
     ): Promise<LiveSessionExecuteRewindResult> {
       const parentSession = await ensureLoadedSession(sessionId)
-      return derivationManager.executeRewind(parentSession, request)
+      return derivationManager.executeRewind(parentSession, {
+        ...request,
+        messageId: resolveRewindSourceMessageId(sessionId, request.messageId),
+      })
     },
 
     async compactSession(

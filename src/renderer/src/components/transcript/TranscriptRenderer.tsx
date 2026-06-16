@@ -65,6 +65,7 @@ export interface TranscriptRendererProps {
     requestId: string
     answers: LiveSessionAskUserAnswerRecord[]
   }) => void
+  onForkFromMessage?: (messageId: string) => void
   onRetry?: () => void
 }
 
@@ -81,6 +82,7 @@ export function TranscriptRenderer({
   pendingAskUserRequestIds = [],
   onResolvePermissionRequest,
   onSubmitAskUserResponse,
+  onForkFromMessage,
   onRetry,
 }: TranscriptRendererProps) {
   const renderItems = useMemo(() => buildRenderItems(items), [items])
@@ -97,6 +99,7 @@ export function TranscriptRenderer({
         pendingAskUserRequestIds={pendingAskUserRequestIds}
         onResolvePermissionRequest={onResolvePermissionRequest}
         onSubmitAskUserResponse={onSubmitAskUserResponse}
+        onForkFromMessage={onForkFromMessage}
       />
     )
   }
@@ -110,6 +113,7 @@ export function TranscriptRenderer({
       scrollContextKey={scrollContextKey ?? 'historical-transcript'}
       scrollToBottomSignal={scrollToBottomSignal}
       primaryActionRef={primaryActionRef}
+      onForkFromMessage={onForkFromMessage}
       onRetry={onRetry}
     />
   )
@@ -262,6 +266,7 @@ function LiveTranscriptView({
   pendingAskUserRequestIds,
   onResolvePermissionRequest,
   onSubmitAskUserResponse,
+  onForkFromMessage,
 }: {
   items: RenderItem[]
   scrollContextKey: string
@@ -275,6 +280,7 @@ function LiveTranscriptView({
     requestId: string
     answers: LiveSessionAskUserAnswerRecord[]
   }) => void
+  onForkFromMessage?: (messageId: string) => void
 }) {
   const [expandedToolIds, setExpandedToolIds] = useState<Record<string, boolean>>({})
   const [expandedToolGroupIds, setExpandedToolGroupIds] = useState<Record<string, boolean>>({})
@@ -503,6 +509,7 @@ function LiveTranscriptView({
                       }
                       onResolvePermissionRequest={onResolvePermissionRequest}
                       onSubmitAskUserResponse={onSubmitAskUserResponse}
+                      onForkFromMessage={onForkFromMessage}
                     />
                   )}
                 </div>
@@ -528,6 +535,7 @@ function HistoricalTranscriptView({
   searchTarget,
   scrollToBottomSignal,
   primaryActionRef,
+  onForkFromMessage,
   onRetry,
 }: {
   items: RenderItem[]
@@ -537,6 +545,7 @@ function HistoricalTranscriptView({
   searchTarget: SessionSearchTarget | null
   scrollToBottomSignal: number
   primaryActionRef?: MutableRefObject<HTMLElement | null>
+  onForkFromMessage?: (messageId: string) => void
   onRetry?: () => void
 }) {
   const scrollAreaRef = useRef<HTMLDivElement | null>(null)
@@ -806,7 +815,11 @@ function HistoricalTranscriptView({
                       />
                     </StandaloneToolWrapper>
                   ) : (
-                    <TimelineItemRow item={entry.item} isPending={false} />
+                    <TimelineItemRow
+                      item={entry.item}
+                      isPending={false}
+                      onForkFromMessage={onForkFromMessage}
+                    />
                   )}
                 </div>
               )
@@ -947,6 +960,7 @@ const TimelineItemRow = memo(function TimelineItemRow({
   isPending,
   onResolvePermissionRequest,
   onSubmitAskUserResponse,
+  onForkFromMessage,
 }: {
   item: TimelineItem
   isPending: boolean
@@ -955,10 +969,11 @@ const TimelineItemRow = memo(function TimelineItemRow({
     requestId: string
     answers: LiveSessionAskUserAnswerRecord[]
   }) => void
+  onForkFromMessage?: (messageId: string) => void
 }) {
   switch (item.kind) {
     case 'message':
-      return <MessageCard item={item} />
+      return <MessageCard item={item} onForkFromMessage={onForkFromMessage} />
     case 'thinking':
       return <ThinkingCard item={item} />
     case 'tool':

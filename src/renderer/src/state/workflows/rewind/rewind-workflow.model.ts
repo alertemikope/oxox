@@ -3,6 +3,7 @@ import type {
   LiveSessionExecuteRewindResult,
   LiveSessionRewindInfo,
 } from '../../../../../shared/ipc/contracts'
+import type { AsyncActionsStore } from '../../composer/async-actions.model'
 import { createRewindWorkflowState$, type RewindWorkflowState } from './rewind-workflow.state'
 
 export interface RewindSessionApi {
@@ -25,17 +26,20 @@ export class RewindWorkflowStore {
   private readonly getSelectedSession: () => { title: string } | null
   private readonly sessionApi: RewindSessionApi
   private readonly onRewound?: (result: LiveSessionExecuteRewindResult) => Promise<void>
+  private readonly asyncActionsStore?: AsyncActionsStore
 
   constructor(
     getSelectedSessionId: () => string | null,
     getSelectedSession: () => { title: string } | null,
     sessionApi: RewindSessionApi,
     onRewound?: (result: LiveSessionExecuteRewindResult) => Promise<void>,
+    asyncActionsStore?: AsyncActionsStore,
   ) {
     this.getSelectedSessionId = getSelectedSessionId
     this.getSelectedSession = getSelectedSession
     this.sessionApi = sessionApi
     this.onRewound = onRewound
+    this.asyncActionsStore = asyncActionsStore
   }
 
   get rewindMessageId(): string {
@@ -235,6 +239,57 @@ export class RewindWorkflowStore {
         this.rewindError =
           error instanceof Error ? error.message : 'Unable to execute the rewind request.'
       })
+    } finally {
+      batch(() => {
+        this.rewindingSessionId = null
+      })
+    }
+  }
+
+  executeRewindFromMessage = async (
+    messageId: string,
+  ): Promise<LiveSessionExecuteRewindResult | null> => {
+    const selectedSessionId = this.getSelectedSessionId()
+    const trimmedMessageId = messageId.trim()
+
+    if (!selectedSessionId || trimmedMessageId.length === 0 || !this.sessionApi.executeRewind) {
+      return null
+    }
+
+    const forkTitle = `Fork from ${this.getSelectedSession()?.title?.trim() || 'session'}`
+    const actionId = this.asyncActionsStore?.startAction('Creating fork', forkTitle)
+
+    batch(() => {
+      this.rewindingSessionId = selectedSessionId
+      this.rewindError = null
+    })
+
+    try {
+      const result = await this.sessionApi.executeRewind(selectedSessionId, {
+        messageId: trimmedMessageId,
+        filesToRestore: [],
+        filesToDelete: [],
+        forkTitle,
+      })
+
+      await this.onRewound?.(result)
+      if (actionId) {
+        this.asyncActionsStore?.completeAction(actionId, 'Fork created', result.snapshot.title)
+      }
+
+      return result
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to fork from the selected message.'
+
+      batch(() => {
+        this.rewindError = message
+      })
+      if (actionId) {
+        this.asyncActionsStore?.failAction(actionId, 'Fork failed', message)
+      }
+
+      return null
     } finally {
       batch(() => {
         this.rewindingSessionId = null

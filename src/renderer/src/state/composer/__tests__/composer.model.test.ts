@@ -998,7 +998,63 @@ describe('ComposerStore', () => {
     expect(liveSessionStore.selectedSnapshot?.title).toBe('Rewinded session')
     expect(composerStore.rewindWorkflow.isRewindDialogOpen).toBe(false)
     expect(composerStore.feedbackStore.feedback).toEqual({
-      message: 'Rewound to “Rewinded session”.',
+      message: 'Created fork “Rewinded session”.',
+      tone: 'success',
+    })
+  })
+
+  it('creates a rewind fork from a message without opening the rewind dialog', async () => {
+    const getRewindInfo = vi.fn().mockResolvedValue(createRewindInfo())
+    const executeRewind = vi.fn().mockResolvedValue({
+      snapshot: createLiveSnapshot({
+        sessionId: 'session-rewind',
+        title: 'Fork from Alpha',
+      }),
+      restoredCount: 0,
+      deletedCount: 0,
+      failedRestoreCount: 0,
+      failedDeleteCount: 0,
+    })
+    const getBootstrap = vi.fn().mockResolvedValue(
+      createBootstrap({
+        sessions: [createSessionRecord({ id: 'session-rewind', title: 'Fork from Alpha' })],
+      }),
+    )
+
+    mockBridge({
+      getRewindInfo,
+      executeRewind,
+    })
+
+    const { composerStore, liveSessionStore, sessionStore } = createStores({
+      selectedSessionId: 'session-alpha',
+      foundationBridge: {
+        getBootstrap,
+      },
+    })
+
+    await composerStore.rewindWorkflow.executeRewindFromMessage('message-1')
+
+    expect(composerStore.rewindWorkflow.isRewindDialogOpen).toBe(false)
+    expect(getRewindInfo).not.toHaveBeenCalled()
+    expect(executeRewind).toHaveBeenCalledWith('session-alpha', {
+      messageId: 'message-1',
+      filesToRestore: [],
+      filesToDelete: [],
+      forkTitle: 'Fork from Alpha session',
+    })
+    expect(getBootstrap).toHaveBeenCalledTimes(1)
+    expect(sessionStore.selectedSessionId).toBe('session-rewind')
+    expect(liveSessionStore.selectedSnapshot?.title).toBe('Fork from Alpha')
+    expect(composerStore.asyncActionsStore.actions).toEqual([
+      expect.objectContaining({
+        title: 'Fork created',
+        description: 'Fork from Alpha',
+        status: 'success',
+      }),
+    ])
+    expect(composerStore.feedbackStore.feedback).toEqual({
+      message: 'Created fork “Fork from Alpha”.',
       tone: 'success',
     })
   })
