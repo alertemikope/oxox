@@ -1,5 +1,12 @@
 # oxox
 
+## 0.0.13
+
+### Patch Changes
+
+- Add a macOS template tray icon with packaged standard and retina assets.
+- Improve update installation so restarting for an update goes through OXOX graceful shutdown before invoking the updater installer.
+
 ## 0.0.12
 
 ### Patch Changes
