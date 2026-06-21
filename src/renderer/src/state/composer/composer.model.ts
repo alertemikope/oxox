@@ -722,6 +722,7 @@ export class ComposerStore {
 
     if (sessionId) {
       this.pendingDraftPreferences = null
+      this.syncSelectedSessionModelPreference(sessionId)
     }
 
     this.lastSessionId = sessionId
@@ -740,6 +741,42 @@ export class ComposerStore {
 
   private persistPreferences(preferences: Record<string, ComposerPreferences>): void {
     persistComposerPreferences(this.persistence, preferences)
+  }
+
+  private syncSelectedSessionModelPreference(sessionId: string): void {
+    const sessionModelId = this.sessionStore.selectedSession?.modelId
+
+    if (!sessionModelId) {
+      return
+    }
+
+    const snapshot = this.liveSessionStore.snapshotForSession(sessionId)
+    const currentPreferences = deriveComposerPreferences(
+      sessionId,
+      snapshot,
+      this.preferencesBySessionId,
+      this.foundationStore.factoryDefaultSettings as FactoryDefaults,
+      this.foundationStore.factoryModels,
+    )
+
+    if (currentPreferences.modelId === sessionModelId) {
+      return
+    }
+
+    this.preferencesBySessionId = {
+      ...this.preferencesBySessionId,
+      [sessionId]: {
+        ...currentPreferences,
+        modelId: sessionModelId,
+        reasoningEffort: resolveReasoningEffort(
+          sessionModelId,
+          currentPreferences.reasoningEffort,
+          snapshot?.availableModels?.length
+            ? snapshot.availableModels
+            : this.foundationStore.factoryModels,
+        ),
+      },
+    }
   }
 
   private saveSelectedDraftSnapshot(): void {
