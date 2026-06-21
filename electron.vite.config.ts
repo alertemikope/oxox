@@ -46,11 +46,27 @@ export default defineConfig({
       },
     },
     server: {
+      allowedHosts: ['droid.ilanndardour.com'],
+      host: '0.0.0.0',
       port: 3105,
+      proxy: {
+        '/__oxox': {
+          target: 'http://127.0.0.1:3106',
+          ws: true,
+        },
+      },
       strictPort: true,
     },
     preview: {
+      allowedHosts: ['droid.ilanndardour.com'],
+      host: '0.0.0.0',
       port: 3105,
+      proxy: {
+        '/__oxox': {
+          target: 'http://127.0.0.1:3106',
+          ws: true,
+        },
+      },
       strictPort: true,
     },
   },

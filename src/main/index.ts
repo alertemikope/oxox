@@ -21,6 +21,7 @@ import { getRuntimeInfo } from './runtime/runtimeInfo'
 import { getContentSecurityPolicy } from './security/csp'
 import { type AppUpdater, createAppUpdater } from './updater/appUpdater'
 import { createUpdateInstallCoordinator } from './updater/updateInstallCoordinator'
+import { createWebBridgeServer } from './web/webBridgeServer'
 import { buildMainWindowOptions } from './windows/mainWindow'
 import { createWindowCoordinator } from './windows/windowCoordinator'
 import { createWindowLifecycleCoordinator } from './windows/windowLifecycle'
@@ -40,6 +41,7 @@ let mainWindow: BrowserWindow | null = null
 let lastFocusedWindow: BrowserWindow | null = null
 let appKernel: AppKernel | null = null
 let appUpdater: AppUpdater | null = null
+let webBridgeServer: ReturnType<typeof createWebBridgeServer> | null = null
 let stopRuntimeCoordinator: (() => void) | null = null
 const gracefulQuitController = createGracefulQuitController({
   detachActiveSessions,
@@ -141,7 +143,10 @@ function registerSecurityHeaders(): void {
 }
 
 function broadcastFoundationChanged(payload: { refreshedAt: string }): void {
-  for (const window of BrowserWindow.getAllWindows()) {
+  for (const window of [
+    ...BrowserWindow.getAllWindows(),
+    ...(webBridgeServer?.getVirtualWindows() ?? []),
+  ]) {
     if (window.isDestroyed()) {
       continue
     }
@@ -151,7 +156,10 @@ function broadcastFoundationChanged(payload: { refreshedAt: string }): void {
 }
 
 function broadcastAppUpdateStateChanged(payload: { snapshot: unknown }): void {
-  for (const window of BrowserWindow.getAllWindows()) {
+  for (const window of [
+    ...BrowserWindow.getAllWindows(),
+    ...(webBridgeServer?.getVirtualWindows() ?? []),
+  ]) {
     if (window.isDestroyed()) {
       continue
     }
@@ -161,7 +169,10 @@ function broadcastAppUpdateStateChanged(payload: { snapshot: unknown }): void {
 }
 
 function broadcastPluginHostSnapshot(payload: { snapshot: unknown }): void {
-  for (const window of BrowserWindow.getAllWindows()) {
+  for (const window of [
+    ...BrowserWindow.getAllWindows(),
+    ...(webBridgeServer?.getVirtualWindows() ?? []),
+  ]) {
     if (window.isDestroyed()) {
       continue
     }
@@ -171,7 +182,10 @@ function broadcastPluginHostSnapshot(payload: { snapshot: unknown }): void {
 }
 
 function broadcastPluginCapabilitiesChanged(payload: { refreshedAt: string }): void {
-  for (const window of BrowserWindow.getAllWindows()) {
+  for (const window of [
+    ...BrowserWindow.getAllWindows(),
+    ...(webBridgeServer?.getVirtualWindows() ?? []),
+  ]) {
     if (window.isDestroyed()) {
       continue
     }
@@ -228,7 +242,7 @@ app.whenReady().then(async () => {
         throw new Error('App kernel unavailable during IPC registration.')
       }
 
-      return registerAppIpcHandlers({
+      const handlerOptions = {
         ipcMain,
         service,
         updater: createUpdateInstallCoordinator({
@@ -245,7 +259,28 @@ app.whenReady().then(async () => {
         showOpenDialog: (ownerWindow, options) => dialog.showOpenDialog(ownerWindow, options),
         resolveOwnerWindow: (sender) => BrowserWindow.fromWebContents(sender) ?? undefined,
         logTranscriptPerformance: transcriptPerformanceLogWriter.log,
+      }
+
+      const cleanupIpcHandlers = registerAppIpcHandlers(handlerOptions)
+      webBridgeServer?.close()
+      webBridgeServer = createWebBridgeServer({
+        registerHandlers: (webIpcMain) =>
+          registerAppIpcHandlers({
+            ...handlerOptions,
+            ipcMain: webIpcMain,
+            resolveOwnerWindow: () => undefined,
+            showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+          }),
       })
+      void webBridgeServer.start().catch((error) => {
+        console.error('Failed to start OXOX web bridge', error)
+      })
+
+      return () => {
+        cleanupIpcHandlers()
+        webBridgeServer?.close()
+        webBridgeServer = null
+      }
     },
     installSystemIntegration: (service) =>
       installSystemIntegration({
@@ -274,13 +309,19 @@ app.whenReady().then(async () => {
   const foundationService = appKernel.start()
   void appUpdater.start()
   const liveSessionSnapshotBroadcaster = createLiveSessionSnapshotBroadcaster({
-    getAllWindows: () => BrowserWindow.getAllWindows(),
+    getAllWindows: () => [
+      ...BrowserWindow.getAllWindows(),
+      ...(webBridgeServer?.getVirtualWindows() ?? []),
+    ],
     getSessionSnapshot: (sessionId) => foundationService.getSessionSnapshot(sessionId),
     isRendererAttachedToSession,
     logPerformanceEvent: transcriptPerformanceLogWriter.log,
   })
   const liveSessionEventBroadcaster = createLiveSessionEventBroadcaster({
-    getAllWindows: () => BrowserWindow.getAllWindows(),
+    getAllWindows: () => [
+      ...BrowserWindow.getAllWindows(),
+      ...(webBridgeServer?.getVirtualWindows() ?? []),
+    ],
     isRendererAttachedToSession,
     logPerformanceEvent: transcriptPerformanceLogWriter.log,
   })

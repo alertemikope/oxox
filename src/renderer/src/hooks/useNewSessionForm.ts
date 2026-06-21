@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import type { LiveSessionMessageImageSource } from '../../../shared/ipc/contracts'
 
 import type { PlatformApiClient } from '../platform/apiClient'
+import { getBrowserDefaultWorkspacePath } from '../platform/browserBridge'
 import type { ComposerStore } from '../state/composer/composer.model'
 import type { LiveSessionStore } from '../state/live-sessions/live-session.model'
 import type { SessionStore } from '../state/sessions/session.model'
@@ -74,6 +75,8 @@ export function useNewSessionForm({
 
   const openDraft = useCallback(
     (workspacePath?: string, folderId?: string | null) => {
+      const resolvedWorkspacePath = workspacePath?.trim() || getBrowserDefaultWorkspacePath() || ''
+
       if (!showForm) {
         previousSessionIdRef.current = sessionStore.selectedSessionId
       }
@@ -81,14 +84,14 @@ export function useNewSessionForm({
       triggerRef.current =
         document.activeElement instanceof HTMLElement ? document.activeElement : null
       setShowForm(true)
-      setPath(workspacePath?.trim() ?? '')
+      setPath(resolvedWorkspacePath)
       setError(null)
       pendingFolderIdRef.current = folderId ?? null
       composerStore.setDraft('')
       sessionStore.startDraftSelection()
 
-      if (workspacePath?.trim()) {
-        composerStore.beginPendingDraftForWorkspace(workspacePath)
+      if (resolvedWorkspacePath) {
+        composerStore.beginPendingDraftForWorkspace(resolvedWorkspacePath)
         return
       }
 
