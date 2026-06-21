@@ -7,6 +7,7 @@ import { createPlatformApiClient } from '../../../platform/apiClient'
 import { PLACEHOLDER_FOUNDATION } from '../../../state/foundation/foundation.model'
 import { RootStore } from '../../../state/root/root.model'
 import { StoreProvider } from '../../../state/root/store-provider'
+import { ThemeProvider } from '../../ui/theme-provider'
 import { GeneralSettings } from '../GeneralSettings'
 
 function renderGeneralSettings() {
@@ -40,7 +41,9 @@ function renderGeneralSettings() {
     rootStore,
     view: render(
       <StoreProvider rootStore={rootStore}>
-        <GeneralSettings />
+        <ThemeProvider>
+          <GeneralSettings />
+        </ThemeProvider>
       </StoreProvider>,
     ),
   }

@@ -131,6 +131,141 @@
   --sidebar-ring: var(--ox-accent);
 }
 
+/* ============================================================= */
+/* Themes — override the --ox-* palette per theme class on <html>. */
+/* The legacy --fd-* and shadcn bridges reference --ox-* tokens,   */
+/* so swapping these cascades through the whole UI.                */
+/* :root.<class> keeps specificity above the base :root block.     */
+/* ============================================================= */
+
+/* Light — clean white surface, keeps the OXOX green accent. */
+:root.light {
+  color-scheme: light;
+
+  --ox-canvas: #ffffff;
+  --ox-surface: #f7f7f8;
+  --ox-panel: #f0f1f3;
+  --ox-elevated: #ffffff;
+  --ox-hover: rgba(0, 0, 0, 0.04);
+  --ox-overlay: rgba(20, 20, 20, 0.32);
+
+  --ox-border-subtle: rgba(0, 0, 0, 0.06);
+  --ox-border: rgba(0, 0, 0, 0.1);
+  --ox-border-strong: rgba(0, 0, 0, 0.16);
+
+  --ox-text: #1a1a1a;
+  --ox-text-muted: #4b515c;
+  --ox-text-subtle: #6b7280;
+  --ox-text-faint: #9aa0aa;
+  --ox-text-inverse: #ffffff;
+
+  --ox-accent: #12b76a;
+  --ox-accent-hover: #0e9a59;
+  --ox-accent-muted: rgba(18, 183, 106, 0.14);
+  --ox-accent-soft: rgba(18, 183, 106, 0.08);
+  --ox-success: #12915a;
+  --ox-warning: #b45309;
+  --ox-danger: #dc2626;
+
+  --ox-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
+  --ox-shadow-md: 0 18px 46px rgba(15, 23, 42, 0.12);
+  --ox-shadow-elevated: 0 22px 70px rgba(15, 23, 42, 0.16);
+}
+
+/* Midnight — deep navy dark theme with an indigo accent. */
+:root.midnight {
+  color-scheme: dark;
+
+  --ox-canvas: #0b0f1a;
+  --ox-surface: #0f1524;
+  --ox-panel: #141c30;
+  --ox-elevated: #1b2540;
+  --ox-hover: rgba(255, 255, 255, 0.05);
+  --ox-overlay: rgba(4, 7, 14, 0.8);
+
+  --ox-border-subtle: rgba(255, 255, 255, 0.06);
+  --ox-border: rgba(255, 255, 255, 0.1);
+  --ox-border-strong: rgba(255, 255, 255, 0.16);
+
+  --ox-text: #e6ebf5;
+  --ox-text-muted: #a7b0c6;
+  --ox-text-subtle: #737e99;
+  --ox-text-faint: #555f78;
+  --ox-text-inverse: #0b0f1a;
+
+  --ox-accent: #7c8cff;
+  --ox-accent-hover: #99a6ff;
+  --ox-accent-muted: rgba(124, 140, 255, 0.18);
+  --ox-accent-soft: rgba(124, 140, 255, 0.1);
+  --ox-success: #31b978;
+  --ox-warning: #d7a642;
+  --ox-danger: #f05d5e;
+}
+
+/* Ember — warm dark theme with the classic Factory orange accent. */
+:root.ember {
+  color-scheme: dark;
+
+  --ox-canvas: #161311;
+  --ox-surface: #1c1815;
+  --ox-panel: #221d19;
+  --ox-elevated: #2a2420;
+  --ox-hover: rgba(255, 255, 255, 0.045);
+  --ox-overlay: rgba(12, 9, 7, 0.8);
+
+  --ox-border-subtle: rgba(255, 255, 255, 0.055);
+  --ox-border: rgba(255, 255, 255, 0.092);
+  --ox-border-strong: rgba(255, 255, 255, 0.15);
+
+  --ox-text: #f0e8e2;
+  --ox-text-muted: #c2b3a8;
+  --ox-text-subtle: #8c7d72;
+  --ox-text-faint: #6b5d53;
+  --ox-text-inverse: #161311;
+
+  --ox-accent: #f0944e;
+  --ox-accent-hover: #ffa86a;
+  --ox-accent-muted: rgba(240, 148, 78, 0.18);
+  --ox-accent-soft: rgba(240, 148, 78, 0.1);
+  --ox-success: #31b978;
+  --ox-warning: #d7a642;
+  --ox-danger: #f05d5e;
+}
+
+/* Solarized Light — warm cream surface with a calm blue accent. */
+:root.solarized-light {
+  color-scheme: light;
+
+  --ox-canvas: #fdf6e3;
+  --ox-surface: #f5eed5;
+  --ox-panel: #eee8d5;
+  --ox-elevated: #fdf6e3;
+  --ox-hover: rgba(7, 54, 66, 0.05);
+  --ox-overlay: rgba(7, 54, 66, 0.28);
+
+  --ox-border-subtle: rgba(7, 54, 66, 0.08);
+  --ox-border: rgba(7, 54, 66, 0.14);
+  --ox-border-strong: rgba(7, 54, 66, 0.22);
+
+  --ox-text: #073642;
+  --ox-text-muted: #586e75;
+  --ox-text-subtle: #839496;
+  --ox-text-faint: #93a1a1;
+  --ox-text-inverse: #fdf6e3;
+
+  --ox-accent: #268bd2;
+  --ox-accent-hover: #1c6fab;
+  --ox-accent-muted: rgba(38, 139, 210, 0.16);
+  --ox-accent-soft: rgba(38, 139, 210, 0.09);
+  --ox-success: #859900;
+  --ox-warning: #b58900;
+  --ox-danger: #dc322f;
+
+  --ox-shadow-sm: 0 1px 2px rgba(7, 54, 66, 0.1);
+  --ox-shadow-md: 0 18px 46px rgba(7, 54, 66, 0.14);
+  --ox-shadow-elevated: 0 22px 70px rgba(7, 54, 66, 0.18);
+}
+
 @layer components {
   .ox-surface {
     border: 1px solid var(--ox-border);

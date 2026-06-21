@@ -1,7 +1,18 @@
 import { useValue } from '@legendapp/state/react'
 import type { FoundationBootstrap } from '../../../../shared/ipc/contracts'
 import { useFoundationStore, useUIStore } from '../../state/root/store-provider'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Switch } from '../ui/switch'
+import { type Theme, useTheme } from '../ui/theme-provider'
+
+const THEME_OPTIONS: Array<{ value: Theme; label: string }> = [
+  { value: 'system', label: 'Système' },
+  { value: 'dark', label: 'Sombre' },
+  { value: 'light', label: 'Clair' },
+  { value: 'midnight', label: 'Midnight' },
+  { value: 'ember', label: 'Ember' },
+  { value: 'solarized-light', label: 'Solarized clair' },
+]
 
 export function GeneralSettings() {
   const uiStore = useUIStore()
@@ -15,6 +26,7 @@ export function GeneralSettings() {
   )
   const factoryDefaultSettings = useValue(foundationStore.state$.foundation.factoryDefaultSettings)
   const defaultRows = buildFactoryDefaultRows(factoryDefaultSettings)
+  const { theme, setTheme } = useTheme()
 
   return (
     <div className="flex flex-col gap-6">
@@ -27,9 +39,18 @@ export function GeneralSettings() {
 
       <div className="flex flex-col divide-y divide-fd-border-subtle rounded-lg border border-fd-border-default bg-fd-surface">
         <SettingsRow label="Theme" description="Choose how the app looks.">
-          <span className="rounded-md border border-fd-border-default bg-fd-panel px-3 py-1.5 text-xs text-fd-secondary">
-            Dark
-          </span>
+          <Select value={theme} onValueChange={(value) => setTheme(value as Theme)}>
+            <SelectTrigger size="sm" className="min-w-36" aria-label="Theme">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {THEME_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </SettingsRow>
 
         <SettingsRow

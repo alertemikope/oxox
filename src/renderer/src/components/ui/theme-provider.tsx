@@ -1,8 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 import * as React from 'react'
 
-type Theme = 'dark' | 'light' | 'system'
-type ResolvedTheme = 'dark' | 'light'
+export type Theme = 'system' | 'dark' | 'light' | 'midnight' | 'ember' | 'solarized-light'
+type ResolvedTheme = Exclude<Theme, 'system'>
 
 type ThemeProviderProps = {
   children: React.ReactNode
@@ -17,7 +17,20 @@ type ThemeProviderState = {
 }
 
 const COLOR_SCHEME_QUERY = '(prefers-color-scheme: dark)'
-const THEME_VALUES: Theme[] = ['dark', 'light', 'system']
+const THEME_VALUES: Theme[] = ['system', 'dark', 'light', 'midnight', 'ember', 'solarized-light']
+
+// Each theme maps to the list of classes applied on <html>. The base class
+// ('dark' or 'light') drives Tailwind's `dark:` variant and color-scheme, while
+// the optional modifier class swaps the --ox-* palette in CSS.
+const THEME_CLASSES: Record<ResolvedTheme, string[]> = {
+  dark: ['dark'],
+  light: ['light'],
+  midnight: ['dark', 'midnight'],
+  ember: ['dark', 'ember'],
+  'solarized-light': ['light', 'solarized-light'],
+}
+
+const ALL_THEME_CLASSES = Array.from(new Set(Object.values(THEME_CLASSES).flat()))
 
 const ThemeProviderContext = React.createContext<ThemeProviderState | undefined>(undefined)
 
@@ -30,6 +43,10 @@ function isTheme(value: string | null): value is Theme {
 }
 
 function getSystemTheme(): ResolvedTheme {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return 'dark'
+  }
+
   if (window.matchMedia(COLOR_SCHEME_QUERY).matches) {
     return 'dark'
   }
@@ -103,8 +120,9 @@ export function ThemeProvider({
       const resolvedTheme = nextTheme === 'system' ? getSystemTheme() : nextTheme
       const restoreTransitions = disableTransitionOnChange ? disableTransitionsTemporarily() : null
 
-      root.classList.remove('light', 'dark')
-      root.classList.add(resolvedTheme)
+      root.classList.remove(...ALL_THEME_CLASSES)
+      root.classList.add(...THEME_CLASSES[resolvedTheme])
+      root.dataset.theme = resolvedTheme
 
       if (restoreTransitions) {
         restoreTransitions()
@@ -116,7 +134,7 @@ export function ThemeProvider({
   React.useEffect(() => {
     applyTheme(theme)
 
-    if (theme !== 'system') {
+    if (theme !== 'system' || typeof window.matchMedia !== 'function') {
       return undefined
     }
 
@@ -151,14 +169,11 @@ export function ThemeProvider({
       }
 
       setThemeState((currentTheme) => {
-        const nextTheme =
-          currentTheme === 'dark'
-            ? 'light'
-            : currentTheme === 'light'
-              ? 'dark'
-              : getSystemTheme() === 'dark'
-                ? 'light'
-                : 'dark'
+        const cycle: Theme[] = THEME_VALUES.filter((value) => value !== 'system')
+        const currentIndex = cycle.indexOf(
+          currentTheme === 'system' ? getSystemTheme() : currentTheme,
+        )
+        const nextTheme = cycle[(currentIndex + 1) % cycle.length]
 
         localStorage.setItem(storageKey, nextTheme)
         return nextTheme
