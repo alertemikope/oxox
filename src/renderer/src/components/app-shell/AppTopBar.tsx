@@ -1,4 +1,4 @@
-import { Info, PanelLeft, Search } from 'lucide-react'
+import { Info, PanelLeft, Search, Settings } from 'lucide-react'
 import type { CSSProperties } from 'react'
 
 import { Button } from '../ui/button'
@@ -17,9 +17,11 @@ export interface AppTopBarProps {
   isSidebarHidden?: boolean
   isContextPanelHidden?: boolean
   isSearchOpen?: boolean
+  isSettingsOpen?: boolean
   onToggleSidebar?: () => void
   onToggleContextPanel?: () => void
   onOpenSearch?: () => void
+  onToggleSettings?: () => void
 }
 
 export function AppTopBar({
@@ -28,9 +30,11 @@ export function AppTopBar({
   isSidebarHidden,
   isContextPanelHidden,
   isSearchOpen,
+  isSettingsOpen,
   onToggleSidebar,
   onToggleContextPanel,
   onOpenSearch,
+  onToggleSettings,
 }: AppTopBarProps) {
   return (
     <header className="ox-topbar flex h-[50px] items-center gap-2 px-3" style={DRAG_STYLE}>
@@ -137,6 +141,31 @@ export function AppTopBar({
                 {isContextPanelHidden ? 'Show' : 'Hide'} session details
                 <kbd className="ml-1.5 rounded bg-white/10 px-1 py-0.5 font-mono text-[9px] text-fd-tertiary">
                   Cmd+Alt+P
+                </kbd>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : null}
+
+        {onToggleSettings ? (
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={isSettingsOpen ? 'Close settings' : 'Open settings'}
+                  aria-pressed={isSettingsOpen}
+                  className={`size-7 ${isSettingsOpen ? 'bg-fd-surface-hover text-fd-primary' : 'ox-icon-button'}`}
+                  onClick={onToggleSettings}
+                >
+                  <Settings className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-[11px]">
+                {isSettingsOpen ? 'Close' : 'Open'} settings
+                <kbd className="ml-1.5 rounded bg-white/10 px-1 py-0.5 font-mono text-[9px] text-fd-tertiary">
+                  Cmd+,
                 </kbd>
               </TooltipContent>
             </Tooltip>

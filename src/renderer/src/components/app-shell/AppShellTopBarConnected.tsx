@@ -24,6 +24,14 @@ export function AppShellTopBarConnected() {
         sessionStore.selectedSession?.projectLabel),
   )
 
+  const toggleSettings = () => {
+    if (uiStore.isSettingsOpen()) {
+      uiStore.closeSettings()
+    } else {
+      uiStore.openSettings()
+    }
+  }
+
   if (isSettingsOpen) {
     return (
       <AppTopBar
@@ -31,8 +39,10 @@ export function AppShellTopBarConnected() {
         sessionProjectLabel={undefined}
         isSidebarHidden={isSidebarHidden}
         isSearchOpen={isSearchOpen}
+        isSettingsOpen={isSettingsOpen}
         onToggleSidebar={uiStore.toggleSidebar}
         onOpenSearch={uiStore.openSearch}
+        onToggleSettings={toggleSettings}
       />
     )
   }
@@ -44,8 +54,10 @@ export function AppShellTopBarConnected() {
         sessionProjectLabel="All sessions"
         isSidebarHidden
         isSearchOpen={isSearchOpen}
+        isSettingsOpen={isSettingsOpen}
         onToggleSidebar={uiStore.toggleSidebar}
         onOpenSearch={uiStore.openSearch}
+        onToggleSettings={toggleSettings}
       />
     )
   }
@@ -57,9 +69,11 @@ export function AppShellTopBarConnected() {
       isSidebarHidden={isSearchOpen || isSidebarHidden}
       isContextPanelHidden={isContextPanelHidden}
       isSearchOpen={isSearchOpen}
+      isSettingsOpen={isSettingsOpen}
       onToggleSidebar={uiStore.toggleSidebar}
       onToggleContextPanel={uiStore.toggleContextPanel}
       onOpenSearch={uiStore.openSearch}
+      onToggleSettings={toggleSettings}
     />
   )
 }

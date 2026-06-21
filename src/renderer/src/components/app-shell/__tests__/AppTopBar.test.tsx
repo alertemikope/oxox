@@ -17,4 +17,20 @@ describe('AppTopBar', () => {
 
     expect(onOpenSearch).toHaveBeenCalledTimes(1)
   })
+
+  it('toggles settings from the topbar action', () => {
+    const onToggleSettings = vi.fn()
+
+    render(
+      <AppTopBar
+        sessionTitle="Active session"
+        isSettingsOpen={false}
+        onToggleSettings={onToggleSettings}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /open settings/i }))
+
+    expect(onToggleSettings).toHaveBeenCalledTimes(1)
+  })
 })
